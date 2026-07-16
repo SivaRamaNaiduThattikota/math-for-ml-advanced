@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Variational Autoencoders · Math for ML · Advanced</title>
+<meta name="description" content="The ELBO meets a neural network: encoder, decoder, the reparameterization trick, the closed-form Gaussian KL, and a smooth latent space you can sample from.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Variational Autoencoders · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="18_vae">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · The idea</a>
+  <a href="#s2">2 · The objective (ELBO)</a>
+  <a href="#s3">3 · Reparameterization</a>
+  <a href="#s4">4 · Why the KL term</a>
+  <a href="#s5">5 · In ML</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Generative &amp; Deep Models · 18</div>
+    <h1>Variational Autoencoders</h1>
+    <p class="lede">Take the ELBO from Session 12, wrap the encoder and decoder in neural networks, and train the whole thing with the reparameterization trick. The result learns a smooth latent space you can sample from — a generative model built entirely from Pillar III's math.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Sessions 09, 12, 17</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Session 12 turned intractable inference into optimizing a bound, the ELBO. A <strong>variational autoencoder</strong> is that idea made concrete and deep: an <em>encoder</em> network maps each input to a distribution over latent codes, a <em>decoder</em> network maps codes back to data, and the two are trained together by maximizing the ELBO — using the reparameterization trick so gradients flow through the sampling step. The payoff is a generative model with a <strong>smooth, sampleable latent space</strong>: draw a random code, decode it, and out comes a plausible new datapoint.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Describe the VAE: encoder $q_\phi(z\mid x)$, decoder $p_\theta(x\mid z)$, prior $p(z)=\mathcal N(0,I)$.</li>
+    <li>Write the ELBO as <strong>reconstruction − KL-to-prior</strong> and compute the closed-form Gaussian KL.</li>
+    <li>Apply the <strong>reparameterization trick</strong> to backprop through sampling.</li>
+    <li>Explain why the KL term forces a smooth, gap-free latent space (and what posterior collapse / β-VAE do).</li>
+    <li>Contrast VAEs with GANs and place them in the generative-model landscape.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Kingma &amp; Welling 2014, <em>Auto-Encoding Variational Bayes</em>; Kingma &amp; Welling 2019, <em>An Introduction to Variational Autoencoders</em>; Higgins et al. 2017 (β-VAE). Builds directly on Session 12's ELBO.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Encoder, decoder, prior</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">The objective is the ELBO</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">The reparameterization trick</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Why the KL term matters</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Where it lives in ML</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$q_\phi(z\mid x)$</span><span class="def">Encoder — outputs a Gaussian $\mathcal N(\mu_\phi(x),\sigma_\phi(x)^2)$ over latent codes.</span>
+    <span class="sym">$p_\theta(x\mid z)$</span><span class="def">Decoder — reconstructs data from a latent code.</span>
+    <span class="sym">$p(z)$</span><span class="def">Latent prior, standard normal $\mathcal N(0,I)$.</span>
+    <span class="sym">$z=\mu+\sigma\odot\epsilon$</span><span class="def">Reparameterization; $\epsilon\sim\mathcal N(0,I)$.</span>
+    <span class="sym">$\beta$</span><span class="def">Weight on the KL term (β-VAE) — trades reconstruction vs disentanglement.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Encoder, decoder, prior</h2>
+<p>A VAE has three pieces:</p>
+<ul>
+  <li><strong>Encoder</strong> $q_\phi(z\mid x)$ — a network that reads an input $x$ and outputs the parameters of a Gaussian over latent codes: a mean $\mu_\phi(x)$ and a (log-)variance $\sigma_\phi(x)^2$. So each input becomes not a point but a small <em>blob</em> in latent space.</li>
+  <li><strong>Decoder</strong> $p_\theta(x\mid z)$ — a network that reads a latent code $z$ and produces a reconstruction (a distribution over data, e.g. Gaussian or Bernoulli pixels).</li>
+  <li><strong>Prior</strong> $p(z)=\mathcal N(0,I)$ — the target shape for the whole latent space, so codes cluster tidily around the origin.</li>
+</ul>
+<p>A plain autoencoder maps $x\to z\to\hat x$ with a single point $z$ and no constraint on the code space — great for reconstruction, useless for generation (the space is full of gaps that decode to garbage). The VAE's probabilistic encoder + prior is exactly what makes the latent space <em>generative</em>.</p>
+
+<div class="callout c-anchor"><span class="tag">Analogy</span>
+A VAE is a compressor with a <strong>tidy filing system</strong>. The encoder files each input under a fuzzy address (a Gaussian blob, not an exact point); the KL term forces every address to cluster near a common origin so there are no empty gaps; and the decoder can rebuild the item from any address. Because the space is filled in and gap-free, you can pick a <em>random</em> address and still decode something plausible — that's generation.</div>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>The objective is the ELBO</h2>
+<p>Training maximizes the ELBO from Session 12, which splits into two readable terms:</p>
+<div class="mathband">$$ \mathcal L(x) = \underbrace{\mathbb E_{q_\phi(z\mid x)}\big[\log p_\theta(x\mid z)\big]}_{\text{reconstruction: rebuild } x} \;-\; \underbrace{\mathrm{KL}\big(q_\phi(z\mid x)\,\|\,p(z)\big)}_{\text{regularizer: stay near the prior}}. $$</div>
+<p>The first term wants a code that reconstructs $x$ well; the second pulls each encoded distribution toward the standard-normal prior. Because both $q$ and $p(z)$ are Gaussian, the KL has a <strong>closed form</strong> (no sampling needed) — for a diagonal $q=\mathcal N(\mu,\sigma^2)$ against $\mathcal N(0,I)$:</p>
+<div class="mathband">$$ \mathrm{KL}\big(\mathcal N(\mu,\sigma^2)\,\|\,\mathcal N(0,1)\big) = \tfrac12\sum_i\big(\sigma_i^2 + \mu_i^2 - 1 - \log\sigma_i^2\big). $$</div>
+<div class="callout c-good"><span class="tag">Verified</span>
+The closed form matches Monte-Carlo estimates: $\mathrm{KL}=0.5$ at $(\mu,\sigma)=(1,1)$, $0.318$ at $(0,0.5)$, $2.22$ at $(2,1.5)$ — and exactly $0$ at the prior $(0,1)$ (E1). On a toy Gaussian decoder, the ELBO decomposes as reconstruction $-1.18$ minus KL $0.28$ = $-1.47$ (E3).</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="vaeplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">encoder output q(z|x) = N(μ, σ²) vs prior N(0,1) — the KL regularizer</span></div>
+    <div class="slider-row"><span>μ</span><input type="range" id="sMu" min="-3" max="3" step="0.05" value="1"><span>σ</span><input type="range" id="sSig" min="0.2" max="2.5" step="0.05" value="1"></div>
+    <div class="readout">
+      <span><span class="k">KL(q‖prior)</span> = <span class="va" id="rKL">…</span></span>
+      <span><span class="k">pull</span> = <span class="vd" id="rPull">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — The KL term as a leash to the prior.</strong> Teal is the standard-normal prior $p(z)$; indigo is one input's encoded distribution $q(z\mid x)=\mathcal N(\mu,\sigma^2)$. The KL is the closed-form $\tfrac12(\sigma^2+\mu^2-1-\log\sigma^2)$ — it's <strong>zero</strong> only when $q$ sits exactly on the prior. Push $\mu$ away or shrink/stretch $\sigma$ and KL rises: the regularizer that keeps every code near the origin, so the latent space stays gap-free and sampleable.</figcaption>
+</figure>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>The reparameterization trick</h2>
+<p>To maximize the ELBO by gradient ascent we must differentiate through the sampling of $z\sim q_\phi(z\mid x)$ — which isn't differentiable as written. The <strong>reparameterization trick</strong> (Session 12) moves the randomness into a fixed noise variable:</p>
+<div class="mathband">$$ z = \mu_\phi(x) + \sigma_\phi(x)\odot\epsilon, \qquad \epsilon\sim\mathcal N(0,I). $$</div>
+<p>Now $z$ is a <em>deterministic, differentiable</em> function of the network outputs $\mu_\phi,\sigma_\phi$ and an external random draw $\epsilon$. Gradients flow straight through $\mu$ and $\sigma$ into the encoder, giving a low-variance estimator that trains stably by ordinary backprop. This single trick is what made VAEs practical.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Sampling $z=\mu+\sigma\epsilon$ with $\mu=0.6,\sigma=0.7$ reproduces the intended distribution — empirical mean $0.599$, std $0.700$ (E4) — while remaining a differentiable function of $(\mu,\sigma)$. (Its ~13× variance advantage over the score-function estimator was measured in Session 12.)</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Why the KL term is what makes it generative</h2>
+<p>Reconstruction alone would let the encoder scatter codes anywhere (a plain autoencoder). The KL-to-prior term does three things that turn a compressor into a generator:</p>
+<ul>
+  <li><strong>No gaps:</strong> pulling every $q(z\mid x)$ toward $\mathcal N(0,I)$ packs the codes into one contiguous region, so almost any sampled $z$ decodes to something valid.</li>
+  <li><strong>Smoothness:</strong> overlapping blobs make nearby codes decode to similar outputs — so <em>interpolating</em> between two codes gives a smooth morph, not a jump.</li>
+  <li><strong>Sampling:</strong> since the aggregate posterior ≈ the prior, you generate by drawing $z\sim\mathcal N(0,I)$ and decoding — no input needed.</li>
+</ul>
+<div class="callout c-warn"><span class="tag">Two failure modes</span>
+<strong>Posterior collapse:</strong> if the decoder is powerful enough to ignore $z$, the KL drives $q$ all the way to the prior and the latent carries no information (KL→0, reconstruction ignores $z$). <strong>Blurry samples:</strong> a Gaussian decoder + the averaging effect of the ELBO tend to produce soft, blurry outputs. <strong>β-VAE</strong> reweights the KL by $\beta$: larger $\beta$ ⇒ more prior-like, more disentangled latents but blurrier reconstructions — the reconstruction↔regularization dial made explicit.</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Where it lives in real ML</h2>
+<ul>
+  <li><strong>Generative modeling:</strong> sample $z\sim\mathcal N(0,I)$, decode → new images/audio/molecules; smooth latent interpolation.</li>
+  <li><strong>Representation learning:</strong> the latent $z$ is a compact, structured feature vector; β-VAE encourages disentangled factors.</li>
+  <li><strong>Anomaly detection:</strong> high reconstruction error (or low ELBO) flags out-of-distribution inputs.</li>
+  <li><strong>Building block:</strong> VQ-VAE (discrete latents) underpins modern image/audio tokenizers feeding transformers (Session 17); latent-diffusion runs diffusion in a VAE's latent space (Session 19).</li>
+</ul>
+<div class="callout c-anchor"><span class="tag">VAE vs GAN</span>
+Both generate, differently. A <strong>VAE</strong> maximizes a likelihood bound (ELBO) — stable training, principled latent space, but blurrier samples. A <strong>GAN</strong> (Sessions 15–16) plays a min–max game against a critic — sharper samples, trickier training, no explicit latent density. VAEs give you a usable latent and a probability; GANs give you fidelity.</div>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+rng = np.random.default_rng(<span class="n">0</span>)
+
+<span class="c"># closed-form Gaussian KL to the standard normal prior</span>
+<span class="k">def</span> <span class="f">kl_to_prior</span>(mu, s):
+    <span class="k">return</span> <span class="n">0.5</span>*np.sum(s**<span class="n">2</span> + mu**<span class="n">2</span> - <span class="n">1</span> - np.log(s**<span class="n">2</span>))
+<span class="f">print</span>(kl_to_prior(np.array([<span class="n">1.</span>]), np.array([<span class="n">1.</span>])))   <span class="c"># 0.5</span>
+<span class="f">print</span>(kl_to_prior(np.array([<span class="n">0.</span>]), np.array([<span class="n">1.</span>])))   <span class="c"># 0.0  (q == prior)</span>
+
+<span class="c"># reparameterization: differentiable sample z = mu + sigma * eps</span>
+mu, s = <span class="n">0.6</span>, <span class="n">0.7</span>
+z = mu + s*rng.standard_normal(<span class="n">100000</span>)
+<span class="f">print</span>(z.mean(), z.std())                       <span class="c"># 0.599  0.700</span>
+
+<span class="c"># one ELBO term-by-term (toy Gaussian decoder, observe x=0.8)</span>
+x = <span class="n">0.8</span>
+recon = -<span class="n">0.5</span>*np.log(<span class="n">2</span>*np.pi) - <span class="n">0.5</span>*((x-mu)**<span class="n">2</span> + s**<span class="n">2</span>)   <span class="c"># E_q[log p(x|z)]</span>
+elbo  = recon - kl_to_prior(np.array([mu]), np.array([s]))
+<span class="f">print</span>(recon, elbo)                             <span class="c"># -1.184  -1.466</span></pre>
+<div class="out">0.5
+0.0
+0.599... 0.700...
+-1.1839 -1.4656</div>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+The KL term is a closed-form $O(\text{latent dim})$ expression — essentially free. All the cost is the two networks: an encoder and decoder forward + backward pass, $O(\text{network size}\times\text{batch})$, exactly like any deep model. Sampling a new datapoint at generation time is one decoder pass, $O(1)$ in the number of inputs. The reparameterization sample adds only an element-wise noise draw.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">The VAE's KL term drives the encoder's output toward…</div>
+  <button class="opt">a one-hot distribution.</button>
+  <button class="opt">the standard-normal prior, so the latent space is gap-free and sampleable.</button>
+  <button class="opt">zero variance always.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">The reparameterization trick exists so that…</div>
+  <button class="opt">the decoder can be linear.</button>
+  <button class="opt">gradients can flow through the sampling of $z$ (write $z=\mu+\sigma\epsilon$).</button>
+  <button class="opt">the KL term becomes zero.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Parameterize log-variance,</strong> not variance, so $\sigma^2=e^{\log\sigma^2}$ stays positive and training is stable.</li>
+  <li><strong>Posterior collapse:</strong> a too-strong decoder ignores $z$; mitigate with KL annealing, weaker decoders, or free-bits.</li>
+  <li><strong>Match the reconstruction loss to the data:</strong> Bernoulli (BCE) for binary pixels, Gaussian (MSE) for continuous — it's the decoder's log-likelihood.</li>
+  <li><strong>Blurry samples</strong> are inherent to the Gaussian-decoder ELBO; VQ-VAE / diffusion decoders sharpen them.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Dropping the KL term</span>Without it you have a plain autoencoder: good reconstruction but a latent space full of gaps — sampling produces garbage. The KL is what makes it generative.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Sampling without reparameterization</span>Directly sampling $z\sim q$ blocks gradients to the encoder. Always use $z=\mu+\sigma\epsilon$ so backprop reaches $\mu,\sigma$.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Reading the ELBO value as the likelihood</span>ELBO is a lower bound on $\log p(x)$ (Session 12); it's a training signal and rough model-comparison proxy, not the exact log-likelihood.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>VAE = probabilistic encoder $q_\phi(z\mid x)$ + decoder $p_\theta(x\mid z)$ + prior $\mathcal N(0,I)$.</li>
+  <li>Objective = <strong>ELBO = reconstruction − KL(q‖prior)</strong>; the Gaussian KL is closed-form.</li>
+  <li><strong>Reparameterize</strong> $z=\mu+\sigma\epsilon$ to backprop through sampling.</li>
+  <li>The <strong>KL term</strong> makes the latent space contiguous, smooth, and sampleable — that's what enables generation.</li>
+  <li><strong>β-VAE</strong> dials reconstruction vs disentanglement; watch for <strong>posterior collapse</strong>.</li>
+  <li>VAE = stable + usable latent + likelihood bound; GAN = sharper but no explicit latent density.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- SECOND VIEW -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 620 180" role="img" aria-label="VAE architecture: encoder to mu sigma to reparameterized z to decoder">
+  <defs><marker id="va" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5A4FCF"/></marker></defs>
+  <g font-family="JetBrains Mono, monospace" font-size="12" text-anchor="middle" fill="#26252E">
+    <rect x="16" y="66" width="60" height="44" rx="9" fill="none" stroke="#C9C4B6"/><text x="46" y="92">x</text>
+    <rect x="120" y="60" width="90" height="56" rx="9" fill="rgba(14,140,128,.10)" stroke="#0E8C80"/><text x="165" y="84" fill="#0E8C80">encoder</text><text x="165" y="100" font-size="9" fill="#6E6C7A">q(z|x)</text>
+    <rect x="254" y="66" width="86" height="44" rx="9" fill="none" stroke="#C9C4B6"/><text x="297" y="86">μ, σ</text><text x="297" y="102" font-size="9" fill="#6E6C7A">+ ε (reparam)</text>
+    <rect x="384" y="66" width="60" height="44" rx="9" fill="none" stroke="#5A4FCF"/><text x="414" y="92" fill="#5A4FCF">z</text>
+    <rect x="488" y="60" width="90" height="56" rx="9" fill="rgba(90,79,207,.10)" stroke="#5A4FCF"/><text x="533" y="84" fill="#5A4FCF">decoder</text><text x="533" y="100" font-size="9" fill="#6E6C7A">p(x|z)</text>
+    <line x1="76" y1="88" x2="118" y2="88" stroke="#5A4FCF" stroke-width="2" marker-end="url(#va)"/>
+    <line x1="210" y1="88" x2="252" y2="88" stroke="#5A4FCF" stroke-width="2" marker-end="url(#va)"/>
+    <line x1="340" y1="88" x2="382" y2="88" stroke="#5A4FCF" stroke-width="2" marker-end="url(#va)"/>
+    <line x1="444" y1="88" x2="486" y2="88" stroke="#5A4FCF" stroke-width="2" marker-end="url(#va)"/>
+    <text x="297" y="150" font-size="10" fill="#B07514">KL(q ‖ N(0,I))  — regularizer</text>
+    <path d="M46,112 C46,165 560,165 560,118" fill="none" stroke="#0E8C80" stroke-width="1.4" stroke-dasharray="4 4"/>
+    <text x="300" y="178" font-size="10" fill="#0E8C80">reconstruction loss:  x  vs  x̂</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">Encode to a distribution → sample a code (reparam) → decode; two losses train it</div>
+</div>
+<figcaption><strong>Figure 2 — The VAE pipeline.</strong> A second view of the whole model: the encoder turns $x$ into $(\mu,\sigma)$, the reparameterization draws a code $z$, the decoder reconstructs $\hat x$. Two forces train it — reconstruction (teal, $x$ vs $\hat x$) and the KL leash (amber, $z$'s distribution vs the prior).</figcaption>
+</figure>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Verify the pieces of the objective.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-m">medium</span><p>Implement the closed-form KL to $\mathcal N(0,1)$ and confirm it against a Monte-Carlo estimate for $(\mu,\sigma)=(1,1)$ and $(0,0.5)$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">kl=<span class="k">lambda</span> mu,s:<span class="n">0.5</span>*(s**<span class="n">2</span>+mu**<span class="n">2</span>-<span class="n">1</span>-np.log(s**<span class="n">2</span>))
+kl(<span class="n">1</span>,<span class="n">1</span>), kl(<span class="n">0</span>,<span class="n">0.5</span>)   <span class="c"># 0.5, 0.318  (MC estimates agree to 3 dp)</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Confirm the KL is exactly 0 when $q$ equals the prior, and grows as $\mu$ moves away or $\sigma\ne1$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$\mathrm{KL}(\mathcal N(0,1)\|\mathcal N(0,1))=\tfrac12(1+0-1-\log1)=0$. Increasing $|\mu|$ adds $\tfrac12\mu^2$; $\sigma\ne1$ adds $\tfrac12(\sigma^2-1-\log\sigma^2)\ge0$ (zero only at $\sigma=1$). So any deviation from the prior costs KL.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Decompose the ELBO into reconstruction and KL for a toy Gaussian decoder ($x=0.8$, $q=\mathcal N(0.6,0.7^2)$).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">recon=-<span class="n">0.5</span>*np.log(<span class="n">2</span>*np.pi)-<span class="n">0.5</span>*((<span class="n">0.8</span>-<span class="n">0.6</span>)**<span class="n">2</span>+<span class="n">0.7</span>**<span class="n">2</span>)   <span class="c"># -1.184</span>
+recon - kl(<span class="n">0.6</span>,<span class="n">0.7</span>)                                    <span class="c"># -1.466 = ELBO</span></pre>
+    <p>Reconstruction $-1.18$ minus KL $0.28$ gives ELBO $-1.47$: the two competing terms the VAE balances.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-e">easy</span><p>Show that $z=\mu+\sigma\epsilon$ produces samples with the intended mean and std, and is differentiable in $\mu,\sigma$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">z=<span class="n">0.6</span>+<span class="n">0.7</span>*rng.standard_normal(<span class="n">100000</span>); z.mean(), z.std()   <span class="c"># 0.599, 0.700</span></pre>
+    <p>The randomness lives in $\epsilon$; $z$ is a smooth function of $\mu,\sigma$, so $\partial z/\partial\mu=1$ and $\partial z/\partial\sigma=\epsilon$ — gradients reach the encoder.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Explain why removing the KL term collapses a VAE to an ordinary autoencoder, and what breaks at generation time.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Without KL, nothing constrains where the encoder places codes, so it spreads them arbitrarily to minimize reconstruction — a deterministic autoencoder. Reconstruction stays good, but the latent space becomes a sparse set of used regions surrounded by <em>gaps</em>. At generation you sample $z\sim\mathcal N(0,I)$; most such $z$ land in gaps the decoder never saw, producing garbage. The KL term is precisely what packs the codes onto the prior so sampled points decode to valid data.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- INTERVIEW -->
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What are the parts of a VAE and its objective?</div><div class="a">Encoder $q_\phi(z\mid x)$, decoder $p_\theta(x\mid z)$, prior $\mathcal N(0,I)$; trained by maximizing the ELBO = $\mathbb E_q[\log p(x\mid z)] - \mathrm{KL}(q\|p(z))$ (reconstruction minus KL-to-prior).</div></div>
+<div class="qa"><div class="q">Q2 · Why the reparameterization trick?</div><div class="a">Sampling $z\sim q$ isn't differentiable; writing $z=\mu+\sigma\epsilon$ with fixed $\epsilon\sim\mathcal N(0,I)$ makes $z$ a differentiable function of the encoder outputs, so gradients (low-variance) flow through.</div></div>
+<div class="qa"><div class="q">Q3 · What does the KL term do?</div><div class="a">Regularizes each encoded distribution toward the prior, packing codes into a contiguous, smooth region so the latent space is gap-free and you can sample/interpolate — the source of generation.</div></div>
+<div class="qa"><div class="q">Q4 · VAE vs GAN?</div><div class="a">VAE maximizes a likelihood bound (stable, explicit latent + density, blurrier); GAN is adversarial (sharper samples, harder training, no explicit latent density).</div></div>
+<div class="qa"><div class="q">Q5 · What is posterior collapse and how do you fix it?</div><div class="a">The decoder ignores $z$ and the KL pushes $q$ to the prior, so the latent is uninformative. Fixes: KL annealing, free-bits, a weaker/limited decoder, or β&lt;1 early.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Encoder/decoder/prior</td><td>Probabilistic autoencoder = generator</td><td class="freq f-h">High</td></tr>
+  <tr><td>ELBO = recon − KL</td><td>The training objective</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Closed-form Gaussian KL</td><td>Cheap, exact regularizer</td><td class="freq f-h">High</td></tr>
+  <tr><td>Reparameterization trick</td><td>Backprop through sampling</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>KL ⇒ smooth latent space</td><td>Sampling &amp; interpolation</td><td class="freq f-h">High</td></tr>
+  <tr><td>β-VAE / posterior collapse</td><td>Reconstruction ↔ disentanglement</td><td class="freq f-m">Medium</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">A VAE is the ELBO wearing an encoder and a decoder.</div>
+  <p><span class="cc-sub">Reusable idea:</span> Session 12's bound, made deep and generative.</p>
+  <ul>
+    <li><strong>Objective = ELBO = reconstruction − KL(q‖prior)</strong>; the Gaussian KL $\tfrac12\sum(\sigma^2+\mu^2-1-\log\sigma^2)$ is closed-form.</li>
+    <li><strong>Reparameterize</strong> $z=\mu+\sigma\epsilon$ so gradients backprop through the sample.</li>
+    <li>The <strong>KL leash to $\mathcal N(0,I)$</strong> packs codes into a smooth, gap-free space — that's what lets you sample and interpolate.</li>
+    <li><strong>β-VAE</strong> dials the reconstruction↔regularization trade; watch for posterior collapse; VAEs are stable but blurrier than GANs.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> encode each input to a fuzzy Gaussian address, force all addresses to cluster on a standard-normal prior, and decode — the KL term fills the gaps so a <em>random</em> address still decodes to something real. That's how a compressor becomes a generator.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>19 · Diffusion Models &amp; Score Matching →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">The current state of the art in generation: gradually add noise to data, then learn to reverse it. SDEs, the score function $\nabla_x\log p(x)$, and denoising — with the Wasserstein and ELBO ideas resurfacing. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>
