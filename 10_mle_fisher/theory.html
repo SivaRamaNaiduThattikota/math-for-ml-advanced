@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>MLE, Fisher Information & Cramér–Rao · Math for ML · Advanced</title>
+<meta name="description" content="Maximum likelihood, the score and Fisher information (curvature of the log-likelihood), and the Cramér–Rao bound that floors any estimator's variance.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MLE, Fisher Information & Cramér–Rao · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="10_mle_fisher">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Maximum likelihood</a>
+  <a href="#s2">2 · Score & Fisher information</a>
+  <a href="#s3">3 · Cramér–Rao bound</a>
+  <a href="#s4">4 · MLE is efficient</a>
+  <a href="#s5">5 · Fisher in ML</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Probabilistic Modeling · 10</div>
+    <h1>MLE, Fisher Information &amp; Cramér–Rao</h1>
+    <p class="lede">How much can a dataset possibly tell you about a parameter? Maximum likelihood gives the estimate, the Fisher information measures how sharp the evidence is, and the Cramér–Rao bound sets a hard floor no estimator can beat.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Sessions 03, 09</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">You've been minimizing losses; now we ask where they come from and how good the resulting estimates can be. <strong>Maximum likelihood</strong> picks the parameter that makes the data most probable — and its negative log <em>is</em> your loss (Session 17 of the foundational track). The <strong>Fisher information</strong> is the curvature of that log-likelihood: a sharp peak means the data pins the parameter down tightly, a flat one means it barely constrains it. The <strong>Cramér–Rao bound</strong> turns that curvature into a hard limit — the smallest variance any unbiased estimator can achieve.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Set up and solve a maximum-likelihood estimate, and recognize the score (gradient of log-likelihood).</li>
+    <li>Define the <strong>Fisher information</strong> three equivalent ways and read it as log-likelihood curvature.</li>
+    <li>State the <strong>Cramér–Rao bound</strong> and use $1/(nI)$ as the variance floor.</li>
+    <li>Explain why the MLE is asymptotically unbiased, normal, and <em>efficient</em>.</li>
+    <li>Connect Fisher information to the Hessian, Newton's method, and the natural gradient.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Bishop, <em>PRML</em> <span class="secs">§1.2.5, §2.3</span>; Murphy, <em>Probabilistic ML</em> <span class="secs">Ch 4 (MLE), §4.7 (Fisher)</span>; Wasserman, <em>All of Statistics</em> <span class="secs">Ch 9</span>.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Maximum likelihood</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">Score &amp; Fisher information</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">The Cramér–Rao bound</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Why the MLE is efficient</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Fisher information in ML</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$\ell(\theta)$</span><span class="def">Log-likelihood $\sum_i\log p(x_i\mid\theta)$.</span>
+    <span class="sym">$s(\theta)$</span><span class="def">Score $=\partial\ell/\partial\theta$; zero at the MLE.</span>
+    <span class="sym">$I(\theta)$</span><span class="def">Fisher information (per sample); curvature of the expected log-likelihood.</span>
+    <span class="sym">$\hat\theta$</span><span class="def">The maximum-likelihood estimator.</span>
+    <span class="sym">CRB</span><span class="def">Cramér–Rao bound $=1/(nI(\theta))$ — the variance floor for unbiased estimators.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Maximum likelihood</h2>
+<p>Given data $x_1,\dots,x_n$ and a model $p(x\mid\theta)$, the <strong>likelihood</strong> is how probable the data is as a function of $\theta$. We maximize its log (a sum, not a product — easier and numerically safer):</p>
+<div class="mathband">$$ \hat\theta = \arg\max_\theta\ \ell(\theta), \qquad \ell(\theta)=\sum_{i=1}^n\log p(x_i\mid\theta). $$</div>
+<p>Maximizing $\ell$ is minimizing $-\ell$, the <strong>negative log-likelihood</strong> — your loss. MSE is the NLL of a Gaussian; cross-entropy is the NLL of a Bernoulli/categorical. So "choose the loss" is really "choose the noise model," and MLE ties the two together.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For a Gaussian with known variance, the MLE of the mean is the <em>sample mean</em>. On $n=50$ draws, the fitted mean is $1.036$ and — the defining property of an optimum — the <strong>score is exactly 0</strong> there: $\sum_i(x_i-\hat\mu)/\sigma^2=0$ (E3).</div>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>The score &amp; Fisher information</h2>
+<p>The <strong>score</strong> is the gradient of the log-likelihood, $s(\theta)=\partial\ell/\partial\theta$. At the MLE the score is zero (flat top). Its sensitivity — how fast the score changes, i.e. the <em>curvature</em> of $\ell$ — is the <strong>Fisher information</strong>, definable three equivalent ways:</p>
+<div class="mathband">$$ I(\theta) = \operatorname{Var}\!\big[s(\theta)\big] = -\,\mathbb E\!\Big[\frac{\partial^2\ell}{\partial\theta^2}\Big] = \mathbb E\!\big[s(\theta)^2\big]. $$</div>
+<p>Intuition: Fisher information is the <strong>curvature of the negative log-likelihood at the truth</strong> (Session 03's Hessian, in expectation). A sharply-peaked likelihood (high curvature) means the data strongly discriminates between nearby $\theta$ — lots of information. A flat likelihood means little. It <strong>adds across independent samples</strong>: $n$ samples carry $nI(\theta)$.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+<strong>Bernoulli:</strong> $I(p)=\tfrac{1}{p(1-p)}$. At $p=0.3$, $I=4.76$ per sample (E2). It's largest near $p=0$ or $1$ (easy to tell apart) and smallest at $p=0.5$ (hardest). Total information from $n$ flips is $n/[p(1-p)]$ — e.g. $47.6$ at $n=10$, $4762$ at $n=1000$ (E5).</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="fisherplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">Bernoulli log-likelihood</span><span>observed k heads in n flips (true p)</span></div>
+    <div class="slider-row"><span>n</span><input type="range" id="sN" min="5" max="800" step="5" value="40"><span>true p</span><input type="range" id="sP" min="0.05" max="0.95" step="0.05" value="0.3"></div>
+    <div class="readout">
+      <span><span class="k">MLE p̂</span> = <span class="va" id="rMLE">…</span></span>
+      <span><span class="k">Fisher (total)</span> = <span class="vd" id="rFish">…</span></span>
+      <span><span class="k">CRB std √(p̂(1−p̂)/n)</span> = <span class="vs" id="rCRB">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — More data sharpens the peak (raises Fisher, lowers the bound).</strong> The teal curve is the Bernoulli log-likelihood over $p$; its peak is the MLE $\hat p=k/n$. The indigo bell is the normal approximation $\mathcal N(\hat p,\,1/(nI))$ — the Laplace approximation. Increase $n$ and the peak becomes <em>sharper</em>: Fisher information (its curvature) grows like $n$, and the Cramér–Rao standard deviation $\sqrt{p(1-p)/n}$ shrinks like $1/\sqrt n$. Data literally narrows what the parameter could be.</figcaption>
+</figure>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>The Cramér–Rao bound — a floor on precision</h2>
+<p>Here is the payoff. For <em>any</em> unbiased estimator $\hat\theta$, its variance cannot beat the inverse Fisher information:</p>
+<div class="mathband">$$ \operatorname{Var}(\hat\theta) \;\ge\; \frac{1}{n\,I(\theta)}. $$</div>
+<p>No cleverness gets you below this — it's a fundamental limit set by the data and model, like a speed of light for estimation. More information (sharper likelihood, more samples) lowers the floor; a flat likelihood raises it.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+<strong>Gaussian mean:</strong> CRB $=\sigma^2/n$. With $\sigma=2,n=50$, that's $0.08$; the empirical variance of the sample-mean estimate over 40k datasets is $0.0799$ (E1) — it <em>hits</em> the bound. <strong>Bernoulli:</strong> CRB $=p(1-p)/n=0.0021$ at $p=0.3,n=100$; empirical $\operatorname{Var}(\hat p)=0.00209$ (E-CRB). Both estimators are efficient — they achieve the floor.</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Why the MLE is (asymptotically) the best you can do</h2>
+<p>The MLE isn't just convenient — it's provably excellent as $n\to\infty$:</p>
+<div class="mathband">$$ \sqrt n\,(\hat\theta-\theta) \ \xrightarrow{d}\ \mathcal N\!\Big(0,\ \tfrac{1}{I(\theta)}\Big). $$</div>
+<p>So the MLE is <strong>consistent</strong> (converges to the truth), <strong>asymptotically normal</strong> (errors are Gaussian), and <strong>efficient</strong> (its variance meets the Cramér–Rao bound). Its precision improves at the canonical $1/\sqrt n$ rate — halve the error bars by quadrupling the data.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For Bernoulli$(0.3)$, $\operatorname{Var}[\sqrt n(\hat p-p)]$ measured over 20k datasets is $0.209,\ 0.213,\ 0.211$ at $n=20,200,2000$ (E4) — all converging to $p(1-p)=0.21=1/I(p)$, exactly the asymptotic variance.</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Where Fisher information shows up in ML</h2>
+<p>This isn't just statistics — Fisher information threads through the whole optimization/inference stack:</p>
+<ul>
+  <li><strong>Newton = Fisher scoring.</strong> Session 08's Newton step $-H^{-1}\nabla\ell$ uses the log-likelihood Hessian; replacing it with the Fisher information gives <em>Fisher scoring</em> (and IRLS for GLMs).</li>
+  <li><strong>Natural gradient.</strong> Preconditioning the gradient by $I(\theta)^{-1}$ gives the <em>natural gradient</em> — steepest descent in the distribution's own geometry, the basis of TRPO/K-FAC.</li>
+  <li><strong>Laplace approximation.</strong> Approximating a posterior by a Gaussian centered at the MAP with covariance $I^{-1}$ is Bayesian model fitting on the cheap (Session 12's cousin).</li>
+  <li><strong>Uncertainty &amp; confidence intervals.</strong> Standard errors of fitted parameters are read straight off $I^{-1}$ — the inverse-Hessian of the loss at the optimum.</li>
+</ul>
+<div class="callout c-anchor"><span class="tag">The unifying picture</span>
+Curvature keeps recurring: Session 02 (definiteness), 03 (Hessian), 07 (conditioning), 08 (Newton). Fisher information is that same curvature, now measuring <em>how much a dataset teaches you</em> — and its inverse is both the CRB floor and the parameter's covariance.</div>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+rng = np.random.default_rng(<span class="n">0</span>)
+
+<span class="c"># Gaussian mean MLE hits the Cramér–Rao bound sigma^2 / n</span>
+sigma, n, mu = <span class="n">2.0</span>, <span class="n">50</span>, <span class="n">1.0</span>
+mus = np.array([rng.normal(mu, sigma, n).mean() <span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">40000</span>)])
+<span class="f">print</span>(mus.var(), sigma**<span class="n">2</span>/n)        <span class="c"># 0.0799  0.08   (achieves CRB)</span>
+
+<span class="c"># Bernoulli: Fisher info and CRB</span>
+p, n = <span class="n">0.3</span>, <span class="n">100</span>
+ph = np.array([rng.binomial(<span class="n">1</span>, p, n).mean() <span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">40000</span>)])
+<span class="f">print</span>(ph.var(), p*(<span class="n">1</span>-p)/n)         <span class="c"># 0.00209  0.0021</span>
+<span class="f">print</span>(<span class="n">1</span>/(p*(<span class="n">1</span>-p)))              <span class="c"># 4.76  = Fisher info per sample</span>
+
+<span class="c"># score is zero at the MLE (Gaussian mean)</span>
+x = rng.normal(<span class="n">1.0</span>, <span class="n">2.0</span>, <span class="n">50</span>); mle = x.mean()
+<span class="f">print</span>(np.sum(x - mle))            <span class="c"># 0.0  -> score vanishes at optimum</span></pre>
+<div class="out">0.07991 0.08
+0.00209 0.0021
+4.7619...
+0.0 (== score at MLE)</div>
+
+<div class="callout c-good"><span class="tag">Standard errors, for free</span>
+Fit any model by MLE, take the Hessian of the NLL at the optimum, invert it — the diagonal gives you approximate variances (standard errors) of the parameters. That inverse-Hessian is the finite-sample Fisher information; it's how <code>statsmodels</code> reports coefficient confidence intervals.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">Fisher information is best described as…</div>
+  <button class="opt">the mean of the data.</button>
+  <button class="opt">the curvature of the (expected) log-likelihood — how sharply data pins down the parameter.</button>
+  <button class="opt">the number of samples.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">The Cramér–Rao bound says that for an unbiased estimator…</div>
+  <button class="opt">variance can be made arbitrarily small with cleverness.</button>
+  <button class="opt">variance $\ge 1/(nI(\theta))$ — a hard floor set by the data and model.</button>
+  <button class="opt">bias equals variance.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>CRB is for <em>unbiased</em> estimators;</strong> biased ones (ridge, shrinkage, MAP) can beat it in MSE by trading a little bias for less variance.</li>
+  <li><strong>Asymptotic, not finite-sample:</strong> MLE efficiency and normality are $n\to\infty$ results; small samples can be biased (e.g. MLE of Gaussian variance divides by $n$, not $n-1$).</li>
+  <li><strong>Regularity conditions:</strong> the CRB needs a smooth, well-behaved likelihood with support not depending on $\theta$ (the uniform's endpoint violates it).</li>
+  <li><strong>Observed vs expected Fisher:</strong> the Hessian at your data (observed) vs its expectation (expected) — both used; they agree asymptotically.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Reporting MLE without a standard error</span>A point estimate is half the answer. The inverse Fisher (inverse-Hessian of the NLL) gives its uncertainty — always report it.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Assuming the CRB bounds biased estimators</span>Regularized/shrinkage estimators routinely have lower MSE than the CRB by being biased — the bound only constrains unbiased ones.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Trusting asymptotics on tiny data</span>With few samples the likelihood may be skewed or multi-modal; the normal approximation and CRB can mislead. Check the actual likelihood shape.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li><strong>MLE</strong> maximizes $\ell(\theta)$; the <strong>score is zero</strong> at the optimum, and $-\ell$ is your loss.</li>
+  <li><strong>Fisher information</strong> = curvature of the log-likelihood = $\operatorname{Var}[\text{score}]=-\mathbb E[\ell'']$; it adds over samples ($nI$).</li>
+  <li><strong>Cramér–Rao:</strong> $\operatorname{Var}(\hat\theta)\ge 1/(nI)$ for unbiased estimators.</li>
+  <li>The <strong>MLE is consistent, asymptotically normal, and efficient</strong> (hits the CRB); precision $\propto1/\sqrt n$.</li>
+  <li>Fisher$^{-1}$ gives <strong>standard errors</strong>; Fisher powers Newton/natural-gradient/Laplace.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Simulate to see the bound be attained.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Simulate the Gaussian-mean MLE and confirm its variance equals the CRB $\sigma^2/n$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">mus=np.array([rng.normal(<span class="n">1</span>,<span class="n">2</span>,<span class="n">50</span>).mean() <span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">40000</span>)])
+mus.var(), <span class="n">4</span>/<span class="n">50</span>    <span class="c"># 0.0799, 0.08 -> hits the bound</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Compute Bernoulli Fisher information at $p=0.3$ and confirm it's minimized at $p=0.5$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$I(p)=1/[p(1-p)]$. At $0.3$: $1/0.21=4.76$. The denominator $p(1-p)$ is largest at $p=0.5$ ($=0.25$), so $I$ is <em>smallest</em> there ($=4$) — a fair coin is the hardest bias to estimate.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Show the score $\sum_i(x_i-\mu)/\sigma^2$ is zero at the Gaussian-mean MLE.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">x=rng.normal(<span class="n">1</span>,<span class="n">2</span>,<span class="n">50</span>); mle=x.mean(); np.sum(x-mle)   <span class="c"># 0.0</span></pre>
+    <p>Setting $\partial\ell/\partial\mu=\sum(x_i-\mu)/\sigma^2=0$ gives $\mu=\bar x$ — the MLE is exactly where the score vanishes.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Verify MLE asymptotic efficiency: show $\operatorname{Var}[\sqrt n(\hat p-p)]\to p(1-p)$ as $n$ grows.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">for</span> n <span class="k">in</span> (<span class="n">20</span>,<span class="n">200</span>,<span class="n">2000</span>):
+    ph=np.array([rng.binomial(<span class="n">1</span>,<span class="n">0.3</span>,n).mean() <span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">20000</span>)])
+    <span class="f">print</span>(np.var(np.sqrt(n)*(ph-<span class="n">0.3</span>)))   <span class="c"># ~0.21 = p(1-p) = 1/I(p)</span></pre>
+    <p>The scaled variance converges to $p(1-p)=0.21$ — the asymptotic variance $1/I(p)$, i.e. the MLE attains the CRB in the limit.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Show a biased estimator can beat the CRB in MSE: compare the sample mean to a shrinkage estimator $\alpha\bar x$ for small samples.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">mu,sigma,n=<span class="n">1.0</span>,<span class="n">2.0</span>,<span class="n">5</span>; a=<span class="n">0.8</span>
+mse=<span class="k">lambda</span> est: np.mean((np.array([est(rng.normal(mu,sigma,n)) <span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">50000</span>)])-mu)**<span class="n">2</span>)
+mse(<span class="k">lambda</span> x:x.mean()), mse(<span class="k">lambda</span> x:a*x.mean())   <span class="c"># shrinkage can be lower</span></pre>
+    <p>The shrinkage estimator is biased (toward 0) but has smaller variance; for small $n$ its MSE can dip <em>below</em> the CRB — legal because the CRB only floors <em>unbiased</em> estimators. This is exactly the bias–variance bargain behind ridge/James–Stein.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Loss functions:</strong> MSE and cross-entropy are NLLs — MLE explains <em>why</em> those are the losses.</li>
+  <li><strong>Standard errors &amp; CIs:</strong> inverse Fisher (inverse-Hessian at the optimum) gives parameter uncertainty.</li>
+  <li><strong>Second-order optimization:</strong> Fisher scoring, natural gradient (K-FAC, TRPO), and IRLS for GLMs.</li>
+  <li><strong>Experiment design &amp; data value:</strong> Fisher information quantifies how much a new sample will actually help.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What is maximum likelihood and its link to loss functions?</div><div class="a">Choose $\theta$ maximizing $\sum\log p(x_i\mid\theta)$. Minimizing the negative log-likelihood is your loss — MSE (Gaussian), cross-entropy (Bernoulli/categorical).</div></div>
+<div class="qa"><div class="q">Q2 · Define Fisher information.</div><div class="a">The variance of the score, equivalently $-\mathbb E[\partial^2\ell/\partial\theta^2]$ — the curvature of the log-likelihood. Higher = data pins the parameter down more tightly; it adds over samples.</div></div>
+<div class="qa"><div class="q">Q3 · State the Cramér–Rao bound.</div><div class="a">For any unbiased estimator, $\operatorname{Var}(\hat\theta)\ge 1/(nI(\theta))$ — a hard variance floor set by the Fisher information.</div></div>
+<div class="qa"><div class="q">Q4 · What are the MLE's asymptotic properties?</div><div class="a">Consistent, asymptotically normal, and efficient: $\sqrt n(\hat\theta-\theta)\to\mathcal N(0,1/I(\theta))$, achieving the CRB.</div></div>
+<div class="qa"><div class="q">Q5 · How do you get standard errors from an MLE fit?</div><div class="a">Invert the Hessian of the NLL at the optimum (the observed Fisher information); its diagonal gives approximate parameter variances.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Maximum likelihood</td><td>Where loss functions come from</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Score = 0 at MLE</td><td>The optimality condition</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>Fisher information</td><td>Curvature = how much data informs $\theta$</td><td class="freq f-h">High</td></tr>
+  <tr><td>Cramér–Rao bound</td><td>Fundamental limit on precision</td><td class="freq f-h">High</td></tr>
+  <tr><td>MLE efficiency ($1/\sqrt n$)</td><td>Why more data helps, and how fast</td><td class="freq f-h">High</td></tr>
+  <tr><td>Fisher⁻¹ = standard errors</td><td>Uncertainty; natural gradient; Newton</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Sharp likelihood = lots of information = tight estimate.</div>
+  <p><span class="cc-sub">Reusable idea:</span> estimation quality is curvature — the same curvature from Pillars I–II, now measuring what data teaches you.</p>
+  <ul>
+    <li><strong>MLE</strong> maximizes $\ell(\theta)$ (score $=0$); $-\ell$ is your loss (MSE ↔ Gaussian, cross-entropy ↔ Bernoulli).</li>
+    <li><strong>Fisher information</strong> $I=-\mathbb E[\ell'']=\operatorname{Var}[\text{score}]$ is the log-likelihood's curvature; it adds over samples.</li>
+    <li><strong>Cramér–Rao:</strong> unbiased estimators satisfy $\operatorname{Var}\ge 1/(nI)$ — a hard floor; the MLE achieves it asymptotically.</li>
+    <li><strong>Fisher$^{-1}$</strong> is the parameter covariance — standard errors, and the metric for the natural gradient / Fisher scoring.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> the shape of the log-likelihood peak <em>is</em> your knowledge. A sharp peak (high Fisher information) means a precise, low-variance estimate; a flat one means the data barely constrains the parameter — and $1/(nI)$ is the best any unbiased estimator can ever do.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>11 · Bayesian inference at scale — MCMC →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">MLE gives a point; Bayes gives a whole posterior — but most posteriors have no closed form. Markov Chain Monte Carlo samples from them anyway: Metropolis–Hastings, detailed balance, and why a random walk can explore a distribution. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

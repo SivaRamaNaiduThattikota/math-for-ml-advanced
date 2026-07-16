@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Multivariate Gaussians & Exponential Families · Math for ML · Advanced</title>
+<meta name="description" content="The multivariate Gaussian ML runs on — its ellipse geometry, marginals and conditionals — and the exponential family that unifies most of the distributions you use.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Multivariate Gaussians & Exponential Families · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="09_multivariate_gaussians">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · The multivariate Gaussian</a>
+  <a href="#s2">2 · Ellipse geometry</a>
+  <a href="#s3">3 · Marginals & conditionals</a>
+  <a href="#s4">4 · Sampling</a>
+  <a href="#s5">5 · The exponential family</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Probabilistic Modeling · 09</div>
+    <h1>Multivariate Gaussians &amp; Exponential Families</h1>
+    <p class="lede">The Gaussian is the distribution machine learning actually runs on — and its shape is pure Session-02 geometry. Then one template, the exponential family, quietly unifies the Gaussian, Bernoulli, Poisson, and most other distributions you'll ever fit.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Sessions 01–02, probability basics</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Pillars I and II gave us structure and optimization; Pillar III adds the other half of ML — <strong>uncertainty</strong>. It starts with the <strong>multivariate Gaussian</strong>, whose density is just a quadratic form (Session 02) dropped into an exponential, so its contours are the covariance ellipses you already know. Then we zoom out to the <strong>exponential family</strong>, the common form behind the Gaussian, Bernoulli, categorical, Poisson, Gamma and more — the abstraction that makes conjugacy, GLMs, and softmax all instances of one idea.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Read the multivariate Gaussian density and identify the Mahalanobis quadratic form in its exponent.</li>
+    <li>Connect its contours to $\Sigma$'s eigenvectors/eigenvalues (ellipse axes and radii).</li>
+    <li>State that marginals and conditionals of a Gaussian are Gaussian, and use the conditional formula.</li>
+    <li>Sample from $\mathcal N(\mu,\Sigma)$ with a Cholesky factor.</li>
+    <li>Write the exponential-family form and use $\nabla A(\eta)=\mathbb E[T(x)]$ to read the mean off the log-partition.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Bishop, <em>PRML</em> <span class="secs">§2.3 (Gaussian), §2.4 (exponential family)</span>; Murphy, <em>Probabilistic ML</em> <span class="secs">Ch 3–4</span>; MML <span class="secs">§6.5–6.6</span>.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">The multivariate Gaussian</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">Ellipse geometry of $\Sigma$</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">Marginals &amp; conditionals</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Sampling via Cholesky</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">The exponential family</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$\mathcal N(\mu,\Sigma)$</span><span class="def">Gaussian with mean vector $\mu$ and covariance matrix $\Sigma$ (symmetric PD).</span>
+    <span class="sym">$\Sigma^{-1}$</span><span class="def">Precision matrix; appears in the density's exponent.</span>
+    <span class="sym">$d_M^2$</span><span class="def">Mahalanobis distance$^2 = (x-\mu)^\top\Sigma^{-1}(x-\mu)$ (Session 02).</span>
+    <span class="sym">$\eta,\,T(x),\,A(\eta)$</span><span class="def">Natural parameter, sufficient statistic, log-partition of an exponential family.</span>
+    <span class="sym">$h(x)$</span><span class="def">Base measure of the family.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>The multivariate Gaussian</h2>
+<p>The density of $\mathcal N(\mu,\Sigma)$ in $\mathbb R^d$ is:</p>
+<div class="mathband">$$ p(x) = \frac{1}{(2\pi)^{d/2}\,|\Sigma|^{1/2}}\ \exp\!\Big(-\tfrac12\,(x-\mu)^\top\Sigma^{-1}(x-\mu)\Big). $$</div>
+<p>Strip away the normalizer and what's left in the exponent is exactly the <strong>Mahalanobis distance</strong> from Session 02: $-\tfrac12 d_M^2$. So the Gaussian says "probability falls off with correlation-aware distance from the mean." The covariance $\Sigma$ (symmetric PD) sets the shape; its inverse $\Sigma^{-1}$, the <strong>precision</strong>, is what actually multiplies the deviation.</p>
+<aside class="side"><span class="lbl">Why it's everywhere</span>The Gaussian is the max-entropy distribution for a fixed mean &amp; covariance, the CLT limit of averages, and closed under linear maps, marginalization, and conditioning. That closure is why it's the workhorse of ML.</aside>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>Its contours are $\Sigma$'s ellipses</h2>
+<p>Level sets $p(x)=\text{const}$ are exactly the level sets of the quadratic form $d_M^2=\text{const}$ — the <strong>covariance ellipses</strong>. From Session 02, if $\Sigma=Q\Lambda Q^\top$ then:</p>
+<ul>
+  <li>the ellipse <strong>axes</strong> are the eigenvectors of $\Sigma$ (the principal directions);</li>
+  <li>the <strong>radii</strong> are proportional to $\sqrt{\lambda_i}$ (the standard deviation along each axis);</li>
+  <li><strong>correlation</strong> tilts the ellipse off-axis — off-diagonal $\Sigma$ means the variables lean together.</li>
+</ul>
+<div class="callout c-good"><span class="tag">Verified</span>
+For $\Sigma=\begin{bmatrix}4&1\\1&1\end{bmatrix}$: eigenvalues $[0.70,\,4.30]$, so the ellipse radii are $\sqrt{}$ of those, $[0.84,\,2.07]$ (E-geo). The long axis points along the direction of highest variance — the first principal component of the data cloud.</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="gaussplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">covariance</span><span>σ₁, σ₂, ρ (correlation)</span></div>
+    <div class="slider-row"><span>σ₁</span><input type="range" id="sS1" min="0.4" max="2.5" step="0.05" value="2"><span>σ₂</span><input type="range" id="sS2" min="0.4" max="2.5" step="0.05" value="1"><span>ρ</span><input type="range" id="sRho" min="-0.9" max="0.9" step="0.05" value="0.5"></div>
+    <div class="readout">
+      <span><span class="k">Σ</span> = <span class="vd" id="rSig">…</span></span>
+      <span><span class="k">eigenvalues</span> = <span class="va" id="rEig">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — A bivariate Gaussian is its covariance ellipse.</strong> Dots are samples drawn from $\mathcal N(0,\Sigma)$; the rings are the 1σ and 2σ probability contours; the arrows are $\Sigma$'s eigenvectors. Change $\sigma_1,\sigma_2$ to stretch the axes; change the correlation $\rho$ to <em>tilt</em> the ellipse — positive $\rho$ leans it along the diagonal, exactly the co-movement the off-diagonal of $\Sigma$ encodes. The cloud always fills the ellipse.</figcaption>
+</figure>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>Marginals &amp; conditionals are Gaussian</h2>
+<p>The Gaussian's superpower: slice it or project it and you still get a Gaussian, with clean formulas. Split $x=(x_1,x_2)$ with block covariance. The <strong>marginal</strong> just reads off the relevant block: $x_1\sim\mathcal N(\mu_1,\Sigma_{11})$. The <strong>conditional</strong> is the workhorse:</p>
+<div class="mathband">$$ x_1\mid x_2 \ \sim\ \mathcal N\big(\underbrace{\mu_1+\Sigma_{12}\Sigma_{22}^{-1}(x_2-\mu_2)}_{\text{shifts linearly with }x_2},\ \underbrace{\Sigma_{11}-\Sigma_{12}\Sigma_{22}^{-1}\Sigma_{21}}_{\text{variance drops}}\big). $$</div>
+<p>Two things to notice: the conditional <strong>mean is a linear function of $x_2$</strong> (this is literally linear regression / the Kalman update), and the conditional <strong>variance shrinks</strong> — knowing $x_2$ removes the uncertainty it shared with $x_1$.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For $\Sigma=\begin{bmatrix}4&1\\1&1\end{bmatrix}$: the conditional slope $\Sigma_{12}\Sigma_{22}^{-1}=1$ and conditional variance $4-1^2/1=3$. Regressing $x_1$ on $x_2$ over 200k samples gives slope $0.997$ and residual variance $3.01$ (E3) — exactly the formula.</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Sampling with Cholesky</h2>
+<p>To draw $x\sim\mathcal N(\mu,\Sigma)$, factor $\Sigma=LL^\top$ (Session 04's Cholesky), draw white noise $z\sim\mathcal N(0,I)$, and colour it:</p>
+<div class="mathband">$$ x = \mu + Lz \quad\Longrightarrow\quad \operatorname{Cov}(x)=L\,I\,L^\top=\Sigma. $$</div>
+<div class="callout c-good"><span class="tag">Verified</span>
+Drawing $200{,}000$ samples via $L z$ with $L=\operatorname{chol}(\Sigma)$ gives an empirical covariance of $\begin{bmatrix}4.01&1.00\\1.00&1.00\end{bmatrix}$ — matching $\Sigma$ to two decimals (E1). Cholesky is how every library samples a correlated Gaussian.</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>The exponential family — one template for many distributions</h2>
+<p>Most named distributions share a form. A family is <strong>exponential</strong> if its density can be written:</p>
+<div class="mathband">$$ p(x\mid\eta) = h(x)\,\exp\!\big(\eta^\top T(x) - A(\eta)\big), $$</div>
+<p>with <strong>natural parameter</strong> $\eta$, <strong>sufficient statistic</strong> $T(x)$, <strong>log-partition</strong> $A(\eta)$ (the normalizer), and base measure $h(x)$. The Gaussian, Bernoulli, categorical (softmax), Poisson, Gamma, Beta, and Dirichlet are all members — differing only in $T,\,A,\,h$.</p>
+<p>The log-partition $A(\eta)$ is a moment generator: its derivatives are the moments of $T$.</p>
+<div class="mathband">$$ \nabla A(\eta) = \mathbb E[T(x)], \qquad \nabla^2 A(\eta) = \operatorname{Cov}[T(x)]\ \succeq 0. $$</div>
+<p>That second fact — the Hessian of $A$ is a covariance, hence PSD (Session 02) — means $A$ is <strong>convex</strong> (Session 05), which is exactly why maximum-likelihood fitting of an exponential family is a convex problem.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+<strong>Bernoulli:</strong> $p^x(1-p)^{1-x}=\exp(x\,\eta - \log(1+e^\eta))$ with $\eta=\log\frac{p}{1-p}$ (the logit!) and $A(\eta)=\log(1+e^\eta)$. Then $A'(\eta)=\sigma(\eta)$, and at $p=0.3$, $\eta=-0.847$, $A'(\eta)=0.3=\mathbb E[x]$ (E4). <strong>Gaussian(μ,1):</strong> $\eta=\mu$, $A(\eta)=\eta^2/2$, $A'(\eta)=\mu=\mathbb E[x]$. The mean falls straight out of the log-partition's slope.</div>
+<aside class="side"><span class="lbl">Why this abstraction pays</span>Logistic regression's logit, softmax, GLMs, and conjugate priors (Session 11–12) are all "exponential family" facts. Prove something once for the family and it holds for every member.</aside>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+
+Sig = np.array([[<span class="n">4.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">1.</span>]])
+
+<span class="c"># sample N(0, Sigma) via Cholesky and check the empirical covariance</span>
+L = np.linalg.cholesky(Sig)
+Z = np.random.default_rng(<span class="n">0</span>).standard_normal((<span class="n">2</span>, <span class="n">200000</span>))
+X = L @ Z
+<span class="f">print</span>(np.cov(X))               <span class="c"># ~ [[4,1],[1,1]]</span>
+
+<span class="c"># conditional x1 | x2 : slope and variance from the block formula</span>
+slope = Sig[<span class="n">0</span>,<span class="n">1</span>]/Sig[<span class="n">1</span>,<span class="n">1</span>]
+condvar = Sig[<span class="n">0</span>,<span class="n">0</span>] - Sig[<span class="n">0</span>,<span class="n">1</span>]**<span class="n">2</span>/Sig[<span class="n">1</span>,<span class="n">1</span>]
+<span class="f">print</span>(slope, condvar)          <span class="c"># 1.0  3.0</span>
+
+<span class="c"># exponential family: Bernoulli, A'(eta)=sigmoid(eta)=E[x]=p</span>
+p = <span class="n">0.3</span>; eta = np.log(p/(<span class="n">1</span>-p))          <span class="c"># natural param = logit(p)</span>
+<span class="f">print</span>(<span class="n">1</span>/(<span class="n">1</span>+np.exp(-eta)))          <span class="c"># 0.3 = mean, read off A'(eta)</span></pre>
+<div class="out">[[4.0096 0.9979]
+ [0.9979 1.0007]]
+1.0 3.0
+0.3</div>
+
+<div class="callout c-good"><span class="tag">The through-line</span>
+The Gaussian's exponent is Session 02's Mahalanobis form; its sampling is Session 04's Cholesky; its log-partition is convex by Session 05. Pillar III is Pillars I–II applied to uncertainty.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">The contours of a bivariate Gaussian are ellipses whose axes are…</div>
+  <button class="opt">always aligned with the coordinate axes.</button>
+  <button class="opt">the eigenvectors of $\Sigma$, with radii $\propto\sqrt{\lambda_i}$.</button>
+  <button class="opt">random and unrelated to $\Sigma$.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">Conditioning a Gaussian on part of its variables…</div>
+  <button class="opt">makes it non-Gaussian.</button>
+  <button class="opt">gives another Gaussian whose mean is linear in the conditioning variable and whose variance shrinks.</button>
+  <button class="opt">leaves the variance unchanged.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>$\Sigma$ must be PD</strong> to have a density; a singular (PSD) $\Sigma$ gives a degenerate Gaussian on a subspace — add jitter $\varepsilon I$ (Session 02/04).</li>
+  <li><strong>Precision vs covariance:</strong> the density uses $\Sigma^{-1}$; in high dimensions, working with the precision matrix is often better-conditioned and sparser.</li>
+  <li><strong>Independence ⇒ zero covariance,</strong> but zero covariance ⇒ independence <em>only</em> for jointly Gaussian variables.</li>
+  <li><strong>Natural vs mean parameters:</strong> exponential families have two coordinate systems ($\eta$ and $\mathbb E[T]$) linked by $\nabla A$ — don't mix them.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Inverting a near-singular covariance</span>Correlated/collinear features make $\Sigma$ ill-conditioned; $\Sigma^{-1}$ blows up. Regularize (add $\varepsilon I$) before computing Mahalanobis distances or densities.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Assuming uncorrelated = independent</span>Only true under joint Gaussianity. In general, zero correlation can still hide nonlinear dependence.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Sampling with the wrong factor</span>Use $x=\mu+Lz$ with $L=\operatorname{chol}(\Sigma)$; using $\Sigma$ itself (not its Cholesky factor) gives the wrong covariance ($L L^\top=\Sigma$, not $\Sigma\Sigma$).</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>The Gaussian's exponent is $-\tfrac12$ the <strong>Mahalanobis distance</strong> — density falls off with correlation-aware distance.</li>
+  <li>Contours are $\Sigma$'s <strong>ellipses</strong>: eigenvectors = axes, $\sqrt{\lambda_i}$ = radii, off-diagonal = tilt.</li>
+  <li><strong>Marginals &amp; conditionals are Gaussian</strong>; conditional mean is linear, variance shrinks.</li>
+  <li>Sample with <strong>Cholesky</strong>: $x=\mu+Lz$.</li>
+  <li>The <strong>exponential family</strong> $h\,e^{\eta^\top T-A}$ unifies most distributions; $\nabla A=\mathbb E[T]$, $\nabla^2 A=\operatorname{Cov}[T]\succeq0$ (so $A$ convex).</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Compute, then verify against samples.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Sample $\mathcal N(0,\Sigma)$ with $\Sigma=\begin{bmatrix}4&1\\1&1\end{bmatrix}$ via Cholesky and confirm the empirical covariance.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">L=np.linalg.cholesky([[<span class="n">4.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">1.</span>]])
+X=L@np.random.default_rng(<span class="n">0</span>).standard_normal((<span class="n">2</span>,<span class="n">200000</span>))
+np.cov(X)     <span class="c"># ~ [[4,1],[1,1]]</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Find the ellipse axes and radii of that $\Sigma$ via <code>eigh</code>.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">w,Q=np.linalg.eigh([[<span class="n">4.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">1.</span>]])
+w, np.sqrt(w)    <span class="c"># eigenvalues [0.70, 4.30], radii [0.84, 2.07]</span></pre>
+    <p>Columns of $Q$ are the axes; the radii scale with $\sqrt{\lambda}$. The long axis is the top principal component.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Derive the conditional $x_1\mid x_2$ slope and variance for that $\Sigma$ and verify by regressing samples.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">slope = <span class="n">1</span>/<span class="n">1</span>            <span class="c"># Sig12 / Sig22 = 1</span>
+condvar = <span class="n">4</span> - <span class="n">1</span>**<span class="n">2</span>/<span class="n">1</span>   <span class="c"># Sig11 - Sig12^2/Sig22 = 3</span>
+b=np.polyfit(X[<span class="n">1</span>],X[<span class="n">0</span>],<span class="n">1</span>); (X[<span class="n">0</span>]-(b[<span class="n">0</span>]*X[<span class="n">1</span>]+b[<span class="n">1</span>])).var()   <span class="c"># slope~1, resid var~3</span></pre>
+    <p>Knowing $x_2$ pulls the estimate of $x_1$ along a line of slope 1 and cuts its variance from 4 to 3 — the shared information removed.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Write Bernoulli$(p)$ in exponential-family form and verify $A'(\eta)=p$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$p^x(1-p)^{1-x}=\exp(x\log\tfrac{p}{1-p}+\log(1-p))=\exp(x\eta-\log(1+e^\eta))$ with $\eta=\operatorname{logit}(p)$, $A(\eta)=\log(1+e^\eta)$. Then $A'(\eta)=\sigma(\eta)$.</p>
+    <pre class="code">p=<span class="n">0.3</span>; eta=np.log(p/(<span class="n">1</span>-p)); <span class="n">1</span>/(<span class="n">1</span>+np.exp(-eta))   <span class="c"># 0.3 = p = E[x]</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Show the Gaussian $\mathcal N(\mu,1)$ is exponential-family and that $\nabla^2 A$ equals the variance (hence $A$ is convex).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$\tfrac1{\sqrt{2\pi}}e^{-(x-\mu)^2/2}=h(x)\exp(\mu x-\tfrac{\mu^2}{2})$ with $T(x)=x$, $\eta=\mu$, $A(\eta)=\eta^2/2$, $h(x)=\tfrac1{\sqrt{2\pi}}e^{-x^2/2}$. Then $A'(\eta)=\eta=\mathbb E[x]$ and $A''(\eta)=1=\operatorname{Var}[x]>0$, so $A$ is (strictly) convex — the general fact $\nabla^2A=\operatorname{Cov}[T]\succeq0$ specialized to 1-D. Convex $A$ ⇒ concave log-likelihood ⇒ unique MLE.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Gaussians everywhere:</strong> GMMs, Gaussian processes, VAEs' latent priors, Kalman filters, Bayesian linear regression.</li>
+  <li><strong>Conditionals = prediction:</strong> the linear conditional-mean formula is Bayesian linear regression and the Kalman update.</li>
+  <li><strong>Exponential family:</strong> GLMs, logistic/softmax, and conjugate priors (Sessions 11–12) are all instances.</li>
+  <li><strong>Convex MLE:</strong> because $A$ is convex, fitting exponential-family models is a convex problem (Session 05).</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What's in the exponent of a multivariate Gaussian?</div><div class="a">$-\tfrac12(x-\mu)^\top\Sigma^{-1}(x-\mu)$ — half the negative Mahalanobis distance. Contours are the covariance ellipses.</div></div>
+<div class="qa"><div class="q">Q2 · Are marginals/conditionals of a Gaussian Gaussian?</div><div class="a">Yes. Marginal reads off the block; conditional has mean $\mu_1+\Sigma_{12}\Sigma_{22}^{-1}(x_2-\mu_2)$ (linear) and reduced covariance $\Sigma_{11}-\Sigma_{12}\Sigma_{22}^{-1}\Sigma_{21}$.</div></div>
+<div class="qa"><div class="q">Q3 · How do you sample $\mathcal N(\mu,\Sigma)$?</div><div class="a">$x=\mu+Lz$ with $L=\operatorname{chol}(\Sigma)$ and $z\sim\mathcal N(0,I)$, since $LL^\top=\Sigma$.</div></div>
+<div class="qa"><div class="q">Q4 · What is the exponential family and why care?</div><div class="a">$p=h(x)e^{\eta^\top T(x)-A(\eta)}$. It unifies Gaussian/Bernoulli/Poisson/etc.; $\nabla A=\mathbb E[T]$, and $A$ convex ⇒ convex MLE and clean conjugate priors.</div></div>
+<div class="qa"><div class="q">Q5 · Does zero covariance imply independence?</div><div class="a">Only for jointly Gaussian variables. In general, uncorrelated variables can still be dependent.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Gaussian density = $e^{-\frac12 d_M^2}$</td><td>The distribution ML runs on</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Covariance ellipse geometry</td><td>PCA, whitening, visualization</td><td class="freq f-h">High</td></tr>
+  <tr><td>Marginal/conditional Gaussians</td><td>Bayesian regression, Kalman, GPs</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Cholesky sampling</td><td>Generating correlated draws</td><td class="freq f-h">High</td></tr>
+  <tr><td>Exponential family</td><td>GLMs, softmax, conjugacy</td><td class="freq f-h">High</td></tr>
+  <tr><td>$\nabla A=\mathbb E[T]$, $A$ convex</td><td>Convex MLE for the whole family</td><td class="freq f-m">Medium</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">The Gaussian is an ellipse; the exponential family is one template.</div>
+  <p><span class="cc-sub">Reusable idea:</span> uncertainty gets the same geometric and unifying treatment as everything before it.</p>
+  <ul>
+    <li><strong>Gaussian</strong> = $e^{-\frac12(x-\mu)^\top\Sigma^{-1}(x-\mu)}$: exponent is Mahalanobis distance, contours are $\Sigma$'s ellipses (eigen-axes, $\sqrt\lambda$ radii).</li>
+    <li><strong>Marginals &amp; conditionals stay Gaussian;</strong> conditional mean is linear, variance shrinks — the math behind Bayesian regression and Kalman.</li>
+    <li><strong>Sample</strong> with Cholesky: $x=\mu+Lz$.</li>
+    <li><strong>Exponential family</strong> $h\,e^{\eta^\top T-A}$ covers Gaussian/Bernoulli/Poisson/…; $\nabla A=\mathbb E[T]$ and $A$ convex ⇒ convex MLE.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> "distributions" in ML are mostly one shape (a Gaussian ellipse) and one template (the exponential family). Learn those two and Bayesian regression, GLMs, softmax, GMMs, and conjugate priors all become the same object wearing different clothes.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>10 · MLE, Fisher Information &amp; Cramér–Rao →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">How much can a dataset possibly tell you about a parameter? Maximum likelihood, the Fisher information (curvature of the log-likelihood), and the Cramér–Rao bound that floors any estimator's variance. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>
