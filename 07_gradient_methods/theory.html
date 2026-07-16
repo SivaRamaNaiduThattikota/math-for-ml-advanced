@@ -99,6 +99,9 @@
 <p>On a quadratic $f(x)=\tfrac12 x^\top A x$ (the local model of <em>any</em> smooth loss, Session 03), the gradient is $Ax$, so one step is $x_{k+1}=(I-\eta A)x_k$. Iterating, $x_k=(I-\eta A)^k x_0$ — and Session 01 tells us the long-run behaviour is governed by the eigenvalues of $I-\eta A$, namely $1-\eta\lambda_i$. <strong>Convergence happens iff every $|1-\eta\lambda_i|<1$</strong>, and its speed is set by the largest of them.</p>
 
 <!-- 2 -->
+<div class="callout c-anchor"><span class="tag">Analogy</span>
+Plain gradient descent is a hiker who only looks at the ground directly underfoot — in a long narrow valley they keep stepping across it and <strong>zig-zag</strong> downhill. <strong>Momentum</strong> is a heavy ball rolling instead: its inertia averages out the side-to-side wobble while the steady downhill pull accumulates, so it glides along the valley floor. Same gradient information, far less zig-zag — which is the whole speed-up.</div>
+
 <h2 id="s2"><span class="num">Section 2</span>Step size &amp; Lipschitz smoothness</h2>
 <p>The biggest safe step comes from <strong>smoothness</strong>: $f$ is $L$-smooth if its gradient doesn't change faster than $L$ (for a quadratic, $L=\lambda_{\max}$). The stability condition $|1-\eta\lambda_i|<1$ for all eigenvalues becomes the rule:</p>
 <div class="mathband">$$ 0 < \eta < \frac{2}{L}. \qquad\text{(A common safe choice is } \eta=1/L.\text{)} $$</div>
@@ -207,6 +210,23 @@ Iterations $\approx\kappa$ for gradient descent, $\approx\sqrt\kappa$ with momen
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<div class="dgrid" style="grid-template-columns:1fr 1fr 1fr; gap:14px">
+  <div><div class="dcap">η too small — crawls</div>
+    <svg viewBox="0 0 150 120" role="img" aria-label="tiny steps barely descending a bowl"><path d="M12,16 Q75,124 138,16" fill="none" stroke="#C9C4B6" stroke-width="1.6"/>
+      <g fill="#B07514"><circle cx="30" cy="70" r="3.5"/><circle cx="38" cy="82" r="3.5"/><circle cx="45" cy="89" r="3.5"/><circle cx="50" cy="93" r="3.5"/></g></svg></div>
+  <div><div class="dcap">η good — converges</div>
+    <svg viewBox="0 0 150 120" role="img" aria-label="a few steps reaching the bottom"><path d="M12,16 Q75,124 138,16" fill="none" stroke="#C9C4B6" stroke-width="1.6"/>
+      <g fill="#0E8C80"><circle cx="30" cy="70" r="3.5"/><circle cx="100" cy="86" r="3.5"/><circle cx="60" cy="99" r="3.5"/><circle cx="75" cy="101" r="4.5"/></g></svg></div>
+  <div><div class="dcap">η &gt; 2/L — diverges</div>
+    <svg viewBox="0 0 150 120" role="img" aria-label="steps growing outward and up"><path d="M12,16 Q75,124 138,16" fill="none" stroke="#C9C4B6" stroke-width="1.6"/>
+      <g fill="#C13A57"><circle cx="66" cy="100" r="3.5"/><circle cx="92" cy="86" r="3.5"/><circle cx="40" cy="72" r="3.5"/><circle cx="120" cy="42" r="3.5"/><circle cx="20" cy="30" r="3.5"/></g></svg></div>
+</div>
+<div class="dcap" style="margin-top:10px">The step size lives in a window (0, 2/L): too small crawls, too big explodes</div>
+</div>
+<figcaption><strong>Figure 2 — Three learning-rate regimes on a 1-D bowl.</strong> A second view of the step-size story: too-small steps inch toward the minimum, a good step reaches it in a few moves, and a step past $2/L$ overshoots by more each time and spirals out. The interactive above shows the same effect in 2-D with conditioning.</figcaption>
+</figure>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>

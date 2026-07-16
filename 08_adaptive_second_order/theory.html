@@ -214,6 +214,28 @@ AdaGrad (accumulate $g^2$) → RMSProp (EMA of $g^2$, fixes decay) → Adam (+ m
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 640 170" role="img" aria-label="the AdaGrad to RMSProp to Adam ladder, each adding one fix">
+  <defs><marker id="mc08" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#5A4FCF"/></marker></defs>
+  <g font-family="JetBrains Mono, monospace" font-size="12.5" text-anchor="middle">
+    <rect x="20" y="55" width="150" height="58" rx="11" fill="rgba(90,79,207,.08)" stroke="#5A4FCF"/>
+    <text x="95" y="80" fill="#26252E">AdaGrad</text><text x="95" y="98" font-size="10.5" fill="#6E6C7A">accumulate g²</text>
+    <rect x="245" y="55" width="150" height="58" rx="11" fill="rgba(90,79,207,.08)" stroke="#5A4FCF"/>
+    <text x="320" y="80" fill="#26252E">RMSProp</text><text x="320" y="98" font-size="10.5" fill="#6E6C7A">EMA of g² (no decay)</text>
+    <rect x="470" y="55" width="150" height="58" rx="11" fill="rgba(90,79,207,.16)" stroke="#5B3FE0" stroke-width="2"/>
+    <text x="545" y="80" fill="#0E0A22">Adam</text><text x="545" y="98" font-size="10.5" fill="#6E6C7A">+ momentum + bias-fix</text>
+    <line x1="172" y1="84" x2="243" y2="84" stroke="#5A4FCF" stroke-width="2" marker-end="url(#mc08)"/>
+    <line x1="397" y1="84" x2="468" y2="84" stroke="#5A4FCF" stroke-width="2" marker-end="url(#mc08)"/>
+    <text x="207" y="72" font-size="10" fill="#B07514">fix decay</text>
+    <text x="432" y="72" font-size="10" fill="#B07514">add momentum</text>
+    <text x="320" y="140" font-size="11" fill="#6E6C7A">each step = one small fix on the previous · all approximate diagonal curvature</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">The adaptive-optimizer ladder: per-coordinate step sizes, refined in three moves</div>
+</div>
+<figcaption><strong>Figure 2 — The adaptive ladder.</strong> A second, conceptual view: AdaGrad accumulates squared gradients (per-coordinate rates, but decays to zero); RMSProp swaps the sum for an exponential moving average (fixing the decay); Adam adds momentum and bias correction. Knowing the ladder tells you exactly what each hyperparameter ($\beta_1,\beta_2,\epsilon$) controls.</figcaption>
+</figure>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>

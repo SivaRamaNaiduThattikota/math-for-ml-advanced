@@ -226,6 +226,29 @@ For a differentiable loss, the fastest convexity check is: compute the Hessian a
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<div class="dgrid">
+  <div><div class="dcap">Convex set — segment stays inside</div>
+    <svg viewBox="0 0 220 130" role="img" aria-label="convex blob with an internal chord">
+      <path d="M40,90 Q30,30 100,25 Q190,25 185,75 Q180,115 100,110 Q55,110 40,90 Z" fill="rgba(90,79,207,.12)" stroke="#5A4FCF" stroke-width="2"/>
+      <line x1="65" y1="55" x2="165" y2="95" stroke="#0E8C80" stroke-width="2.5"/>
+      <circle cx="65" cy="55" r="4" fill="#0E8C80"/><circle cx="165" cy="95" r="4" fill="#0E8C80"/>
+    </svg></div>
+  <div><div class="dcap">Non-convex — segment leaves</div>
+    <svg viewBox="0 0 220 130" role="img" aria-label="crescent with a chord that exits the set">
+      <path d="M40,90 Q30,20 110,25 Q150,28 150,55 Q120,45 105,70 Q95,110 150,105 Q80,120 40,90 Z" fill="rgba(193,58,87,.12)" stroke="#C13A57" stroke-width="2"/>
+      <line x1="60" y1="50" x2="150" y2="100" stroke="#C13A57" stroke-width="2.5" stroke-dasharray="6 4"/>
+      <circle cx="60" cy="50" r="4" fill="#C13A57"/><circle cx="150" cy="100" r="4" fill="#C13A57"/>
+    </svg></div>
+</div>
+<div class="dcap" style="margin-top:10px">Convex ⇔ every chord between two points stays within the set</div>
+</div>
+<figcaption><strong>Figure 2 — Convex vs non-convex sets.</strong> The set-level companion to the function chord test: on the left, the segment joining any two points stays inside (convex); on the right, the dashed segment leaves the set through the dent (non-convex). Optimizing over a convex feasible region is what makes the whole problem tractable in Session 06.</figcaption>
+</figure>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+Checking convexity of a smooth loss numerically means a Hessian PSD test — $O(n^3)$ via eigenvalues, or $\approx\tfrac13 n^3$ via a Cholesky attempt (Session 04) — plus $O(n^2)$ to store the Hessian. But the <strong>convexity calculus</strong> (nonneg sums, max, affine composition, norms) certifies convexity for <em>free</em> — $O(1)$, no computation — which is why practitioners reason about it structurally rather than testing it.</div>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>

@@ -210,6 +210,33 @@ For real constrained problems, use a solver (<code>scipy.optimize.minimize</code
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 460 240" role="img" aria-label="feasible region with active and inactive inequality constraints at the optimum">
+  <g font-family="JetBrains Mono, monospace" font-size="12">
+    <!-- feasible polygon -->
+    <path d="M70,190 L70,80 L180,40 L340,80 L340,190 Z" fill="rgba(90,79,207,.09)" stroke="#C9C4B6" stroke-width="1.5"/>
+    <!-- objective contours (concentric, center bottom-right beyond boundary) -->
+    <g fill="none" stroke="#E0D9F2" stroke-width="1.4">
+      <circle cx="360" cy="150" r="60"/><circle cx="360" cy="150" r="110"/><circle cx="360" cy="150" r="150"/></g>
+    <!-- optimum on the active edge -->
+    <circle cx="340" cy="150" r="6" fill="#5B3FE0"/>
+    <text x="248" y="150" fill="#5B3FE0">optimum</text>
+    <!-- active constraint (edge it presses on) -->
+    <line x1="340" y1="80" x2="340" y2="190" stroke="#C13A57" stroke-width="3"/>
+    <text x="352" y="120" fill="#C13A57" font-size="11">active</text><text x="352" y="136" fill="#C13A57" font-size="11">λ &gt; 0</text>
+    <!-- inactive constraint (a far edge, slack) -->
+    <line x1="70" y1="80" x2="180" y2="40" stroke="#0E8C80" stroke-width="3"/>
+    <text x="90" y="35" fill="#0E8C80" font-size="11">inactive · λ = 0</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">Only the constraint the optimum presses on carries a nonzero multiplier</div>
+</div>
+<figcaption><strong>Figure 2 — Complementary slackness, geometrically.</strong> A second view of KKT: the objective's contours push the optimum against one boundary (the <span style="color:#C13A57">active</span> constraint, $g=0$, $\lambda&gt;0$); the far edge is slack ($g&lt;0$, $\lambda=0$). This is exactly why an SVM's boundary depends only on the support vectors — the points whose margin constraints are active.</figcaption>
+</figure>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+An equality-constrained QP is one linear solve of the $(n{+}m)\times(n{+}m)$ KKT system — $O((n+m)^3)$. The <strong>SVM dual</strong> is a QP in $n$ variables where $n$ is the number of <em>training points</em> (not features), with an $n\times n$ kernel matrix: $O(n^2)$ memory and up to $O(n^3)$ solve. That's why kernel SVMs scale with dataset size rather than dimension — and why large-$n$ problems use decomposition solvers (SMO) or move to linear/stochastic methods.</div>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>
