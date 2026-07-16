@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Diffusion Models & Score Matching · Math for ML · Advanced</title>
+<meta name="description" content="Learn to reverse noise: the forward noising process, the score function, denoising score matching / noise prediction, and sampling by running the reverse process.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Diffusion Models & Score Matching · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="19_diffusion">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Noise, then reverse it</a>
+  <a href="#s2">2 · The forward process</a>
+  <a href="#s3">3 · The score & training</a>
+  <a href="#s4">4 · Sampling</a>
+  <a href="#s5">5 · Connections & ML</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Generative &amp; Deep Models · 19</div>
+    <h1>Diffusion Models &amp; Score Matching</h1>
+    <p class="lede">The current state of the art in generation rests on one disarming idea: slowly destroy data with noise until it's pure static, then train a network to <em>undo</em> that noise one step at a time. Run it backward from noise and an image emerges.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Gaussians, gradients, Sessions 12/18</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Diffusion models power today's best image, audio, and video generators — and the core is remarkably clean. A fixed <strong>forward process</strong> gradually adds Gaussian noise to a datapoint until, after enough steps, nothing but standard noise remains. A learned <strong>reverse process</strong> undoes it: a network trained to predict the noise (equivalently, the <em>score</em> $\nabla_x\log p$) removes a little at each step, and iterating from pure noise produces a fresh sample. It reuses everything from Pillar III — Gaussians, the score, Langevin dynamics, even the ELBO.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Describe the forward (noising) and reverse (denoising) processes.</li>
+    <li>Use the closed form $q(x_t\mid x_0)=\mathcal N(\sqrt{\bar\alpha_t}\,x_0,(1-\bar\alpha_t)I)$ and see it's variance-preserving.</li>
+    <li>Define the <strong>score</strong> $\nabla_x\log p(x)$ and connect it to noise prediction (denoising score matching).</li>
+    <li>State the simple training loss $\lVert\epsilon-\epsilon_\theta(x_t,t)\rVert^2$ and how sampling uses the score.</li>
+    <li>Relate diffusion to Langevin dynamics, VAEs, and Wasserstein gradient flows.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Ho et al. 2020 (DDPM); Song et al. 2021 (score-based SDEs); Song &amp; Ermon 2019 (score matching); Karras et al. 2022 (design space). Builds on the score from Session 10 and the ELBO from Session 12.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Noise, then reverse it</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">The forward process</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">The score &amp; the training loss</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Sampling by denoising</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Connections &amp; where it lives</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$x_0$</span><span class="def">A clean datapoint; $x_t$ its noised version at step $t$.</span>
+    <span class="sym">$\bar\alpha_t$</span><span class="def">Cumulative signal-retention of the noise schedule ($1$ at $t{=}0$, $\to0$ at the end).</span>
+    <span class="sym">$\epsilon$</span><span class="def">The Gaussian noise added; $\epsilon_\theta(x_t,t)$ is the network's prediction of it.</span>
+    <span class="sym">score</span><span class="def">$\nabla_x\log p(x)$ — the direction toward higher data density.</span>
+    <span class="sym">SDE/ODE</span><span class="def">Stochastic/ordinary differential equation describing the continuous-time process.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Destroy with noise, then learn to reverse it</h2>
+<p>The recipe has two halves:</p>
+<ul>
+  <li><strong>Forward (fixed, no learning):</strong> take a datapoint and add a little Gaussian noise, repeatedly, over $T$ steps. After enough steps the data is completely washed out — indistinguishable from $\mathcal N(0,I)$.</li>
+  <li><strong>Reverse (learned):</strong> train a network to take a noisy $x_t$ and estimate the noise in it, so you can remove a little and step from $x_t$ toward $x_{t-1}$. Start from pure noise and repeat: noise → slightly-less-noise → … → a clean sample.</li>
+</ul>
+<p>The genius is that the hard problem (&ldquo;generate a realistic image from nothing&rdquo;) is broken into many <em>easy</em> problems (&ldquo;remove a bit of noise from a slightly-noisy image&rdquo;), each of which a network can learn well.</p>
+
+<div class="callout c-anchor"><span class="tag">Analogy</span>
+Diffusion is <strong>developing a photograph out of TV static</strong>. The forward process is a film of a picture dissolving into snow, frame by frame. The model learns to play that film <em>backward</em>: from a screen of pure static it removes a little noise at each frame, and after many frames a sharp image emerges — as if the photo were slowly developing from the grain.</div>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>The forward process, in closed form</h2>
+<p>Because each step adds Gaussian noise, the noise from step $0$ all the way to step $t$ composes into a <em>single</em> Gaussian — you can jump straight to any noise level without simulating the steps:</p>
+<div class="mathband">$$ x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\;\epsilon, \qquad \epsilon\sim\mathcal N(0,I). $$</div>
+<p>Here $\bar\alpha_t$ slides from $1$ (all signal, $x_t=x_0$) to $0$ (all noise, $x_t\sim\mathcal N(0,I)$). Notice the coefficients: with standardized data ($\operatorname{Var}=1$), $\operatorname{Var}(x_t)=\bar\alpha_t\cdot1+(1-\bar\alpha_t)\cdot1=1$ — the process is <strong>variance-preserving</strong>, smoothly interpolating between the data and the standard normal without blowing up.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Sampling $x_t=\sqrt{\bar\alpha}\,x_0+\sqrt{1-\bar\alpha}\,\epsilon$ on standardized data keeps $\operatorname{Var}(x_t)\approx1$ at every noise level ($\bar\alpha=1,0.7,0.3,0$) (E2) — the data cloud dissolves into a unit Gaussian while its scale stays fixed. And the noising is exactly invertible given $\epsilon$: $x_0=(x_t-\sqrt{1-\bar\alpha}\,\epsilon)/\sqrt{\bar\alpha}$ recovers $x_0=1.3$ exactly (E3).</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="diffplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">forward process: data dissolving into noise</span></div>
+    <div class="slider-row"><span>noise level t →</span><input type="range" id="sT" min="0" max="1" step="0.02" value="0.4"></div>
+    <div class="readout">
+      <span><span class="k">ᾱ</span> = <span class="va" id="rAB">…</span></span>
+      <span><span class="k">state</span> = <span class="vd" id="rState">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Data melting into noise.</strong> The histogram of a two-mode data distribution being noised: at $t=0$ ($\bar\alpha=1$) the two peaks are sharp; slide $t$ up and $\bar\alpha\to0$ as Gaussian noise is mixed in, until the structure dissolves into a single standard-normal bump. Training a network to run this <em>backward</em> — turning the right bump back into two peaks — is the whole generative model.</figcaption>
+</figure>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>The score, and the surprisingly simple loss</h2>
+<p>The reverse process needs to know which way points toward higher data density — the <strong>score</strong>:</p>
+<div class="mathband">$$ \text{score}(x) = \nabla_x \log p(x). $$</div>
+<p>For a Gaussian $\mathcal N(\mu,\sigma^2)$ it's simply $-(x-\mu)/\sigma^2$ — a vector pointing back toward the mean, stronger the farther you are. The key result (<strong>denoising score matching</strong>) is that learning to denoise <em>is</em> learning the score: the noise added to $x_t$ is, up to scale, the negative score of the noised distribution. So instead of estimating a density, the network just predicts the noise:</p>
+<div class="mathband">$$ \mathcal L = \mathbb E_{x_0,\,t,\,\epsilon}\big[\ \lVert\epsilon - \epsilon_\theta(x_t,\,t)\rVert^2\ \big]. $$</div>
+<p>That's it — a plain MSE between the true noise and the network's guess, over random datapoints, timesteps, and noise draws. No adversary (unlike GANs), no intractable partition function. Given $\epsilon_\theta$, the score is recovered as $\nabla_{x_t}\log p_t(x_t)\approx-\epsilon_\theta(x_t,t)/\sqrt{1-\bar\alpha_t}$.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+The Gaussian score $-(x-\mu)/\sigma^2$ matches finite differences of $\log p$ exactly: $+3.125$ at $x{=}0$, $0$ at the mean, $-2.344$ at $x{=}3.5$ for $\mathcal N(2,0.8^2)$ (E1) — a field pointing back toward the mean, which is what &ldquo;denoise&rdquo; means locally.</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Sampling — following the score back to data</h2>
+<p>To generate, start at $x_T\sim\mathcal N(0,I)$ and step backward, each step nudging toward higher density (using the learned score) plus a little fresh noise. This is exactly <strong>Langevin dynamics</strong>:</p>
+<div class="mathband">$$ x \leftarrow x + \tfrac{\eta}{2}\,\nabla_x\log p(x) + \sqrt{\eta}\;\xi, \qquad \xi\sim\mathcal N(0,I), $$</div>
+<p>and its continuous-time form is the <strong>reverse SDE</strong> of the forward noising process. Remarkably, sampling needs <em>only the score</em> — never the normalized density (the same &ldquo;normalizer cancels&rdquo; gift as MCMC, Session 11). A deterministic variant (the probability-flow <strong>ODE</strong>, used by DDIM) drops the noise term for faster, reproducible sampling.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Langevin sampling of a bimodal target using <em>only its score</em> recovers the distribution: $50.0\%$ of samples land in each mode, with cluster means at exactly $-2.00$ and $+2.00$ (E4). Score + noise, iterated, walks pure randomness back onto the data.</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Connections &amp; where it lives</h2>
+<p>Diffusion ties the whole track together:</p>
+<ul>
+  <li><strong>Langevin / MCMC (Session 11):</strong> sampling is score-guided Langevin — a random walk that needs only $\nabla\log p$.</li>
+  <li><strong>VAE / ELBO (Sessions 12, 18):</strong> the DDPM training loss is a (reweighted) ELBO of a deep latent-variable model whose &ldquo;latents&rdquo; are the noised $x_t$.</li>
+  <li><strong>Optimal transport (Session 16):</strong> the reverse process can be read as a Wasserstein gradient flow transporting noise onto the data distribution.</li>
+  <li><strong>In practice:</strong> Stable Diffusion / Imagen / Sora — image, audio, video, molecule generation. <strong>Latent diffusion</strong> runs the process inside a VAE's latent space (Session 18) to cut cost; <strong>classifier-free guidance</strong> steers samples toward a text prompt.</li>
+</ul>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+rng = np.random.default_rng(<span class="n">0</span>)
+
+<span class="c"># forward noising (closed form) is variance-preserving on standardized data</span>
+x0 = rng.standard_normal(<span class="n">100000</span>)
+<span class="k">for</span> ab <span class="k">in</span> (<span class="n">1.0</span>, <span class="n">0.7</span>, <span class="n">0.3</span>, <span class="n">0.0</span>):
+    xt = np.sqrt(ab)*x0 + np.sqrt(<span class="n">1</span>-ab)*rng.standard_normal(<span class="n">100000</span>)
+    <span class="f">print</span>(ab, <span class="f">round</span>(xt.var(),<span class="n">3</span>))            <span class="c"># ~1.0 at every level</span>
+
+<span class="c"># the score of a target is all sampling needs (Langevin), e.g. a mixture</span>
+<span class="k">def</span> <span class="f">score_mix</span>(x, s=<span class="n">0.6</span>):
+    a=np.exp(-<span class="n">0.5</span>*((x+<span class="n">2</span>)/s)**<span class="n">2</span>); b=np.exp(-<span class="n">0.5</span>*((x-<span class="n">2</span>)/s)**<span class="n">2</span>)
+    <span class="k">return</span> (a*(-(x+<span class="n">2</span>)/s**<span class="n">2</span>) + b*(-(x-<span class="n">2</span>)/s**<span class="n">2</span>)) / (a+b+<span class="n">1e-300</span>)
+x = np.zeros(<span class="n">20000</span>); eta = <span class="n">0.05</span>
+<span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">3000</span>):
+    x = x + <span class="n">0.5</span>*eta*score_mix(x) + np.sqrt(eta)*rng.standard_normal(<span class="n">20000</span>)
+<span class="f">print</span>(np.mean(x&lt;<span class="n">0</span>))                        <span class="c"># 0.50  (both modes recovered)</span></pre>
+<div class="out">1.0 1.0
+0.7 1.0
+0.3 1.002
+0.0 1.001
+0.5   # 50/50 across the two modes, means at -2.00 / +2.00</div>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+Training is cheap per step — sample one datapoint, one timestep, one noise draw, do one network forward/backward ($O(\text{network}\times\text{batch})$). The pain is <strong>sampling</strong>: naïve DDPM runs the network sequentially for hundreds–thousands of steps, so generating one image is hundreds of forward passes. Fixes: fewer-step samplers (<strong>DDIM</strong>, exponential integrators), <strong>distillation</strong>/consistency models (1–4 steps), and <strong>latent diffusion</strong> (run in a small VAE latent, not pixel space).</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="2">
+  <div class="qz">What does a diffusion model's network actually learn to predict?</div>
+  <button class="opt">The clean image directly, in one shot.</button>
+  <button class="opt">The noise added at each level (equivalently, the score $\nabla_x\log p$).</button>
+  <button class="opt">A discriminator score, as in a GAN.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="1">
+  <div class="qz">Sampling from a score-based / diffusion model requires…</div>
+  <button class="opt">only the score $\nabla_x\log p$ — never the normalized density.</button>
+  <button class="opt">the exact partition function of the data distribution.</button>
+  <button class="opt">an adversarial critic network.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Variance-preserving vs variance-exploding</strong> are two schedule families; the closed form and coefficients differ — keep them straight.</li>
+  <li><strong>Noise schedule matters:</strong> too fast destroys signal early (bad training), too slow wastes steps. Cosine schedules are a common improvement over linear.</li>
+  <li><strong>Score blows up in low-density regions;</strong> multiple noise levels (the whole point of the schedule) provide a smooth path so Langevin can traverse them.</li>
+  <li><strong>Deterministic ODE (DDIM)</strong> gives reproducible, fast samples but slightly different quality than the stochastic SDE.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Expecting one-step generation</span>Diffusion's quality comes from <em>many</em> small denoising steps. One step of a naïve model gives a blurry mean; fast one-step generation needs distillation/consistency training.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Confusing predicting-noise with predicting-data</span>Networks usually predict $\epsilon$ (the noise), which is equivalent to the score up to scale; predicting $x_0$ directly is a valid but differently-weighted parameterization. Know which your loss assumes.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Sampling in pixel space at scale</span>Full-resolution pixel diffusion is very expensive. Latent diffusion (diffuse in a VAE latent) is what makes high-res generation practical.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li><strong>Forward = add noise</strong> (fixed); <strong>reverse = learn to remove it</strong> (a network).</li>
+  <li>Forward closed form $x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\,\epsilon$ — <strong>variance-preserving</strong>.</li>
+  <li>The net predicts the <strong>noise $\epsilon_\theta$</strong> (≈ the score); loss is plain MSE $\lVert\epsilon-\epsilon_\theta\rVert^2$.</li>
+  <li>Sampling = <strong>Langevin / reverse SDE</strong> using only the score — no normalizer needed.</li>
+  <li>Diffusion = many <em>easy</em> denoising steps, which is why it beats one-shot generators on fidelity.</li>
+  <li>Cost is in <strong>sampling steps</strong>; cut with DDIM, distillation, and latent diffusion.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- SECOND VIEW -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 620 170" role="img" aria-label="forward noising and learned reverse denoising Markov chain">
+  <defs><marker id="dff" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#B07514"/></marker>
+  <marker id="dfr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5A4FCF"/></marker></defs>
+  <g font-family="JetBrains Mono, monospace" font-size="12" text-anchor="middle" fill="#26252E">
+    <circle cx="60" cy="80" r="24" fill="rgba(14,140,128,.15)" stroke="#0E8C80"/><text x="60" y="84">x₀</text>
+    <circle cx="230" cy="80" r="24" fill="rgba(14,140,128,.10)" stroke="#0E8C80"/><text x="230" y="84">xₜ</text>
+    <circle cx="420" cy="80" r="24" fill="rgba(14,140,128,.06)" stroke="#0E8C80"/><text x="420" y="84">x_T</text>
+    <text x="560" y="84" fill="#6E6C7A" font-size="11">≈ N(0,I)</text>
+    <text x="145" y="80" fill="#9C99A6">···</text><text x="325" y="80" fill="#9C99A6">···</text>
+    <!-- forward (add noise) arrows -->
+    <line x1="86" y1="60" x2="204" y2="60" stroke="#B07514" stroke-width="2" marker-end="url(#dff)"/>
+    <line x1="256" y1="60" x2="394" y2="60" stroke="#B07514" stroke-width="2" marker-end="url(#dff)"/>
+    <text x="320" y="44" fill="#B07514" font-size="10">forward: add noise (fixed)</text>
+    <!-- reverse (denoise) arrows -->
+    <line x1="204" y1="104" x2="86" y2="104" stroke="#5A4FCF" stroke-width="2" marker-end="url(#dfr)"/>
+    <line x1="394" y1="104" x2="256" y2="104" stroke="#5A4FCF" stroke-width="2" marker-end="url(#dfr)"/>
+    <text x="320" y="128" fill="#5A4FCF" font-size="10">reverse: denoise with ε_θ / score (learned)</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">Forward destroys structure with noise; the learned reverse rebuilds it step by step</div>
+</div>
+<figcaption><strong>Figure 2 — The diffusion chain.</strong> A second view: a fixed forward chain (amber) turns data $x_0$ into noise $x_T\approx\mathcal N(0,I)$; the learned reverse chain (indigo) denoises back — each step predicting the noise / following the score. Generation = start at $x_T$ and walk left.</figcaption>
+</figure>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Verify the forward process and score-based sampling.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Confirm the Gaussian score $-(x-\mu)/\sigma^2$ matches a finite-difference of $\log p$ for $\mathcal N(2,0.8^2)$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">mu,s=<span class="n">2</span>,<span class="n">0.8</span>; logp=<span class="k">lambda</span> x:-<span class="n">0.5</span>*((x-mu)/s)**<span class="n">2</span>
+[(-(x-mu)/s**<span class="n">2</span>, (logp(x+<span class="n">1e-5</span>)-logp(x-<span class="n">1e-5</span>))/<span class="n">2e-5</span>) <span class="k">for</span> x <span class="k">in</span> (<span class="n">0</span>,<span class="n">3.5</span>)]
+<span class="c"># (3.125, 3.125), (-2.344, -2.344)</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Show the forward process is variance-preserving: $\operatorname{Var}(x_t)\approx1$ for standardized data at any $\bar\alpha$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">x0=rng.standard_normal(<span class="n">100000</span>)
+[(<span class="k">lambda</span> ab: (np.sqrt(ab)*x0+np.sqrt(<span class="n">1</span>-ab)*rng.standard_normal(<span class="n">100000</span>)).var())(ab) <span class="k">for</span> ab <span class="k">in</span> (<span class="n">1</span>,<span class="n">.7</span>,<span class="n">.3</span>,<span class="n">0</span>)]
+<span class="c"># ~[1,1,1,1]</span></pre>
+    <p>$\operatorname{Var}(x_t)=\bar\alpha\cdot1+(1-\bar\alpha)\cdot1=1$ — signal and noise variances trade off but sum to one.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Verify the noise-prediction identity: given $x_t$ and $\epsilon$, recover $x_0$ exactly.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">x0,ab,eps=<span class="n">1.3</span>,<span class="n">0.4</span>,<span class="n">0.7</span>; xt=np.sqrt(ab)*x0+np.sqrt(<span class="n">1</span>-ab)*eps
+(xt-np.sqrt(<span class="n">1</span>-ab)*eps)/np.sqrt(ab)   <span class="c"># 1.3</span></pre>
+    <p>Predicting $\epsilon$ is equivalent to predicting $x_0$ (and to the score) — three views of the same target, related by the closed-form forward equation.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-h">hard</span><p>Sample a bimodal target with Langevin dynamics using only its score, and confirm both modes appear ≈50/50.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">x=np.zeros(<span class="n">20000</span>); eta=<span class="n">0.05</span>
+<span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">3000</span>): x=x+<span class="n">0.5</span>*eta*score_mix(x)+np.sqrt(eta)*rng.standard_normal(<span class="n">20000</span>)
+np.mean(x&lt;<span class="n">0</span>)   <span class="c"># 0.50 ; cluster means -2.00 / +2.00</span></pre>
+    <p>The score alone (no density normalizer) walks noise onto the target — the essence of score-based sampling and the reverse diffusion process.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-m">medium</span><p>Explain why diffusion sampling is slow and name two ways to speed it up.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Sampling runs the denoiser <em>sequentially</em> for many steps (each a full network pass), so latency scales with the step count. Speed-ups: <strong>fewer-step deterministic samplers</strong> (DDIM / higher-order ODE solvers), <strong>distillation / consistency models</strong> (collapse to 1–4 steps), and <strong>latent diffusion</strong> (run in a compact VAE latent rather than pixel space).</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- INTERVIEW -->
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · How does a diffusion model work, in two sentences?</div><div class="a">A fixed forward process adds Gaussian noise to data until it's pure noise; a network learns to reverse it by predicting the noise (the score) at each level, and sampling runs that reverse process from $\mathcal N(0,I)$.</div></div>
+<div class="qa"><div class="q">Q2 · What's the training objective?</div><div class="a">Plain MSE between the true noise and the predicted noise, $\mathbb E\lVert\epsilon-\epsilon_\theta(x_t,t)\rVert^2$, over random datapoints, timesteps, and noise draws — a (reweighted) ELBO, no adversary.</div></div>
+<div class="qa"><div class="q">Q3 · What is the score and why does it matter?</div><div class="a">$\nabla_x\log p(x)$ — the direction toward higher density. Sampling (Langevin / reverse SDE) needs only the score, never the normalized density, so the intractable partition function drops out.</div></div>
+<div class="qa"><div class="q">Q4 · How does diffusion relate to VAEs and Langevin?</div><div class="a">Its loss is a reweighted ELBO of a deep latent-variable model (VAE cousin); its sampler is score-guided Langevin dynamics (MCMC cousin). Reverse process ≈ a Wasserstein gradient flow onto the data.</div></div>
+<div class="qa"><div class="q">Q5 · Why is sampling slow and how is it fixed?</div><div class="a">Hundreds–thousands of sequential denoising passes. Fixes: DDIM / few-step ODE solvers, distillation/consistency (1–4 steps), and latent diffusion (small latent space).</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Forward/reverse processes</td><td>The diffusion recipe</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Closed-form noising (VP)</td><td>Jump to any noise level</td><td class="freq f-h">High</td></tr>
+  <tr><td>Score $\nabla_x\log p$ / noise prediction</td><td>What the network learns</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>MSE denoising loss</td><td>Simple, stable (no adversary)</td><td class="freq f-h">High</td></tr>
+  <tr><td>Langevin / reverse SDE sampling</td><td>Generate using only the score</td><td class="freq f-h">High</td></tr>
+  <tr><td>Sampling cost &amp; fixes</td><td>DDIM, distillation, latent diffusion</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Break generation into many easy denoising steps.</div>
+  <p><span class="cc-sub">Reusable idea:</span> destroy data with noise, then learn to reverse it one small step at a time.</p>
+  <ul>
+    <li><strong>Forward</strong> (fixed): $x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\,\epsilon$ — variance-preserving path from data to $\mathcal N(0,I)$.</li>
+    <li><strong>Learn</strong> to predict the noise $\epsilon_\theta$ (≈ the score $\nabla_x\log p$) with a plain MSE loss — no adversary, no partition function.</li>
+    <li><strong>Sample</strong> from pure noise by Langevin / reverse SDE using only the score — the normalizer cancels (like MCMC).</li>
+    <li><strong>Ties everything together:</strong> Langevin (S11), ELBO (S12/18), Wasserstein flow (S16); cost lives in the many sampling steps (DDIM / distillation / latent diffusion).</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> &ldquo;generate an image from nothing&rdquo; is impossibly hard, but &ldquo;remove a little noise from a slightly-noisy image&rdquo; is easy — so diffusion turns one hard problem into a thousand easy ones, and running them backward develops a picture out of static.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>20 · Normalizing Flows &amp; Change of Variables →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">The one generative family with <em>exact</em> likelihoods: invertible transforms plus the change-of-variables formula (a Jacobian determinant) turn a simple base density into a complex one you can both sample and score. <em>(Completes Pillar VI.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>
