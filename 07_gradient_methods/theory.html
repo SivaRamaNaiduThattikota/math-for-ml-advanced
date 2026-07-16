@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Gradient Methods & Convergence · Math for ML · Advanced</title>
+<meta name="description" content="Step sizes, Lipschitz smoothness, convergence rates, and why the condition number decides speed — plus momentum and Nesterov acceleration.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Gradient Methods & Convergence · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="07_gradient_methods">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · The descent step</a>
+  <a href="#s2">2 · Step size & smoothness</a>
+  <a href="#s3">3 · Convergence rates</a>
+  <a href="#s4">4 · Momentum</a>
+  <a href="#s5">5 · Nesterov & SGD</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Convex Optimization · 07</div>
+    <h1>Gradient Methods &amp; Convergence</h1>
+    <p class="lede">Knowing the minimum exists is not the same as getting there fast. Step size, smoothness, and the condition number decide how many iterations you pay — and momentum is the trick that turns a slow crawl down a narrow valley into a quick glide.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Sessions 02, 05</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Gradient descent is three symbols — $x\leftarrow x-\eta\nabla f$ — but its <em>speed</em> is a whole theory. Pick the step size too big and it diverges; too small and it crawls. And even at the best step size, an ill-conditioned problem (Session 02's stretched bowl) forces the iterates to <strong>zig-zag</strong>, costing you a factor of the condition number in iterations. This session makes convergence quantitative, then introduces <strong>momentum</strong> and <strong>Nesterov acceleration</strong> — the ideas that shrink that cost from $\kappa$ to $\sqrt\kappa$ and power every real optimizer.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Choose a safe step size from the smoothness constant $L$ (the rule $\eta<2/L$).</li>
+    <li>State convergence rates: $O(1/k)$ for convex, <strong>linear</strong> for strongly convex — and how $\kappa$ enters.</li>
+    <li>Explain why gradient descent zig-zags on ill-conditioned problems.</li>
+    <li>Describe <strong>momentum</strong> and why it cuts the iteration count from $\sim\kappa$ to $\sim\sqrt\kappa$.</li>
+    <li>Place Nesterov acceleration and SGD in the same family.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Boyd &amp; Vandenberghe <span class="secs">§9.3 (gradient/steepest descent)</span>; Nesterov, <em>Lectures on Convex Optimization</em> (rates &amp; acceleration); MML <span class="secs">§7.1</span>.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">The descent step</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">Step size &amp; Lipschitz smoothness</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">Convergence rates &amp; $\kappa$</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Momentum</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Nesterov &amp; SGD</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$\eta$</span><span class="def">Step size / learning rate.</span>
+    <span class="sym">$L$</span><span class="def">Smoothness: gradient is $L$-Lipschitz; for a quadratic, $L=\lambda_{\max}$ of the Hessian.</span>
+    <span class="sym">$m$</span><span class="def">Strong-convexity constant; $\lambda_{\min}$ of the Hessian. $\kappa=L/m$.</span>
+    <span class="sym">$\kappa$</span><span class="def">Condition number $L/m$ — the ratio that governs speed (Session 02).</span>
+    <span class="sym">$\beta$</span><span class="def">Momentum coefficient (fraction of the previous velocity retained).</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>The descent step</h2>
+<p>Gradient descent repeatedly steps against the gradient:</p>
+<div class="mathband">$$ x_{k+1} = x_k - \eta\,\nabla f(x_k). $$</div>
+<p>On a quadratic $f(x)=\tfrac12 x^\top A x$ (the local model of <em>any</em> smooth loss, Session 03), the gradient is $Ax$, so one step is $x_{k+1}=(I-\eta A)x_k$. Iterating, $x_k=(I-\eta A)^k x_0$ — and Session 01 tells us the long-run behaviour is governed by the eigenvalues of $I-\eta A$, namely $1-\eta\lambda_i$. <strong>Convergence happens iff every $|1-\eta\lambda_i|<1$</strong>, and its speed is set by the largest of them.</p>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>Step size &amp; Lipschitz smoothness</h2>
+<p>The biggest safe step comes from <strong>smoothness</strong>: $f$ is $L$-smooth if its gradient doesn't change faster than $L$ (for a quadratic, $L=\lambda_{\max}$). The stability condition $|1-\eta\lambda_i|<1$ for all eigenvalues becomes the rule:</p>
+<div class="mathband">$$ 0 < \eta < \frac{2}{L}. \qquad\text{(A common safe choice is } \eta=1/L.\text{)} $$</div>
+<div class="callout c-good"><span class="tag">Verified</span>
+On $f=\tfrac12 x^\top\operatorname{diag}(1,10)x$ ($L=10$, so $2/L=0.2$): $\eta=0.18$ converges in a blink, $\eta=0.20$ sits exactly on the edge and oscillates forever, and $\eta=0.25$ <strong>diverges</strong> ($\lVert x\rVert\to10^{35}$) (E2). One step past $2/L$ and the whole thing blows up.</div>
+<div class="callout c-warn"><span class="tag">Why LR is the #1 hyperparameter</span>
+Too large → divergence; too small → glacial. The useful window is $(0,2/L)$, and the <em>best</em> fixed step for a quadratic is $\eta^\star=\tfrac{2}{\lambda_{\min}+\lambda_{\max}}$. In deep nets $L$ is unknown and changing, which is exactly why learning-rate schedules and adaptive methods (Session 08) exist.</div>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>Convergence rates — and why $\kappa$ is destiny</h2>
+<p>Two regimes matter:</p>
+<ul>
+  <li><strong>Convex + $L$-smooth:</strong> a <em>sublinear</em> rate, $f(x_k)-f^\star = O(1/k)$. To halve the gap you roughly double the iterations.</li>
+  <li><strong>Strongly convex</strong> (Hessian $\succeq mI$): a <em>linear</em> (geometric) rate, $\lVert x_k-x^\star\rVert$ shrinks by a constant factor each step. With the optimal step that factor is</li>
+</ul>
+<div class="mathband">$$ \rho = \frac{\kappa-1}{\kappa+1}, \qquad \kappa=\frac{L}{m}=\frac{\lambda_{\max}}{\lambda_{\min}}. $$</div>
+<p>So the number of iterations to a fixed accuracy scales <strong>linearly with $\kappa$</strong>. A round bowl ($\kappa=1$) is one step; a stretched one is slow.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+GD to tolerance $10^{-8}$ on $\operatorname{diag}(1,\kappa)$: $\kappa=1\to$ <strong>1</strong> step, $\kappa=10\to$ <strong>94</strong>, $\kappa=100\to$ <strong>939</strong> (E1). Iterations grow in lockstep with $\kappa$ — precisely the $\rho=(\kappa-1)/(\kappa+1)$ rate: $0.818$ at $\kappa=10$, $0.980$ at $\kappa=100$.</div>
+<p>This is why <strong>feature scaling, batch norm, and preconditioning</strong> pay off: they lower $\kappa$, and $\kappa$ is the exponent on your training time.</p>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="gdplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">f = ½(x² + κ·y²)</span>
+      <button class="ctrl active" id="btnMom">momentum: off</button>
+    </div>
+    <div class="slider-row"><span>κ</span><input type="range" id="sK" min="1" max="60" step="1" value="20"><span>η</span><input type="range" id="sEta" min="0.005" max="0.4" step="0.005" value="0.1"><span>β</span><input type="range" id="sBeta" min="0" max="0.95" step="0.01" value="0.85"></div>
+    <div class="readout">
+      <span><span class="k">steps to converge</span> = <span class="va" id="rSteps">…</span></span>
+      <span><span class="k">status</span> = <span class="vd" id="rStatus">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Zig-zag, and how momentum cures it.</strong> Contours of a quadratic bowl with condition number $\kappa$; the path is the sequence of iterates from a fixed start. Raise $\kappa$ and plain gradient descent (momentum off) <strong>zig-zags</strong> across the narrow valley, taking ever more steps. Turn momentum on and the oscillations cancel while progress along the valley accumulates — the same problem, a fraction of the steps. Push $\eta$ past the stability limit and the path spirals out (diverges).</figcaption>
+</figure>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Momentum — remember where you were going</h2>
+<p>The zig-zag happens because each step only knows the <em>current</em> gradient, which points across the valley, not along it. <strong>Momentum</strong> (the "heavy ball") accumulates a velocity so that consistent directions build up while oscillating ones cancel:</p>
+<div class="mathband">$$ v_{k+1} = \beta v_k - \eta\nabla f(x_k), \qquad x_{k+1} = x_k + v_{k+1}. $$</div>
+<p>Think of a ball with inertia rolling down the valley: side-to-side wobbles average out, forward motion compounds. The payoff is dramatic on ill-conditioned problems — the convergence factor improves from $\tfrac{\kappa-1}{\kappa+1}$ to about $\tfrac{\sqrt\kappa-1}{\sqrt\kappa+1}$, i.e. iterations scale with $\sqrt\kappa$ instead of $\kappa$.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+On $\operatorname{diag}(1,100)$ ($\kappa=100$): plain GD needs <strong>939</strong> steps, tuned heavy-ball momentum needs <strong>119</strong> (E3) — roughly the $\sqrt{100}=10\times$ speed-up the $\sqrt\kappa$ rate predicts.</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Nesterov acceleration &amp; stochastic descent</h2>
+<h3>Nesterov's accelerated gradient</h3>
+<p>A small change — evaluate the gradient at a <em>look-ahead</em> point $x_k+\beta v_k$ rather than at $x_k$ — gives <strong>Nesterov acceleration</strong>. For smooth convex problems it achieves $O(1/k^2)$ (versus GD's $O(1/k)$), which is provably <strong>optimal</strong> for first-order methods, and the $\sqrt\kappa$ rate in the strongly convex case. It's momentum that "peeks ahead" before committing.</p>
+
+<h3>Stochastic gradient descent</h3>
+<p>In ML the loss is a sum over millions of examples; computing the full gradient every step is wasteful. <strong>SGD</strong> uses a cheap, noisy estimate from a mini-batch:</p>
+<div class="mathband">$$ x_{k+1} = x_k - \eta_k\,\nabla f_{\text{batch}}(x_k). $$</div>
+<p>Each step is unbiased but noisy, so you need a <strong>decreasing schedule</strong> ($\sum\eta_k=\infty,\ \sum\eta_k^2<\infty$) to settle. The noise is not purely a cost — it helps escape saddle points and sharp minima, part of why SGD generalizes well. Real training combines all three ideas: mini-batches (SGD) + momentum + a schedule.</p>
+<aside class="side"><span class="lbl">Forward pointer</span>Momentum + per-coordinate step sizes = <b>Adam</b>, the default deep-learning optimizer. Session 08 builds it, plus the second-order methods (Newton, L-BFGS) that use curvature directly.</aside>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+
+<span class="k">def</span> <span class="f">gd</span>(A, x0, eta, tol=<span class="n">1e-8</span>, iters=<span class="n">100000</span>):
+    x = x0.copy()
+    <span class="k">for</span> k <span class="k">in</span> <span class="f">range</span>(iters):
+        x = x - eta*(A@x)                 <span class="c"># grad of 1/2 xᵀAx is Ax</span>
+        <span class="k">if</span> np.linalg.norm(x) &lt; tol: <span class="k">return</span> k+<span class="n">1</span>
+    <span class="k">return</span> iters
+
+<span class="k">for</span> kap <span class="k">in</span> (<span class="n">1</span>, <span class="n">10</span>, <span class="n">100</span>):
+    A = np.diag([<span class="n">1.0</span>, <span class="f">float</span>(kap)]); eta = <span class="n">2</span>/(<span class="n">1</span>+kap)   <span class="c"># optimal step</span>
+    <span class="f">print</span>(kap, gd(A, np.array([<span class="n">1.</span>,<span class="n">1.</span>]), eta))       <span class="c"># 1->1, 10->94, 100->939</span>
+
+<span class="c"># momentum (heavy ball) — far fewer steps at high kappa</span>
+<span class="k">def</span> <span class="f">heavy_ball</span>(A, x0, eta, beta, tol=<span class="n">1e-8</span>, iters=<span class="n">100000</span>):
+    x = x0.copy(); v = np.zeros_like(x0)
+    <span class="k">for</span> k <span class="k">in</span> <span class="f">range</span>(iters):
+        v = beta*v - eta*(A@x); x = x + v
+        <span class="k">if</span> np.linalg.norm(x) &lt; tol: <span class="k">return</span> k+<span class="n">1</span>
+    <span class="k">return</span> iters
+
+A = np.diag([<span class="n">1.</span>, <span class="n">100.</span>]); sk = np.sqrt(<span class="n">100</span>)
+<span class="f">print</span>(heavy_ball(A, np.array([<span class="n">1.</span>,<span class="n">1.</span>]), (<span class="n">2</span>/(<span class="n">1</span>+sk))**<span class="n">2</span>, ((sk-<span class="n">1</span>)/(sk+<span class="n">1</span>))**<span class="n">2</span>))   <span class="c"># 119  (vs 939)</span></pre>
+<div class="out">1 1
+10 94
+100 939
+119</div>
+
+<div class="callout c-good"><span class="tag">The takeaway in one line</span>
+Iterations $\approx\kappa$ for gradient descent, $\approx\sqrt\kappa$ with momentum/Nesterov. Everything that lowers $\kappa$ (scaling, normalization, preconditioning) or replaces it with $\sqrt\kappa$ (momentum) is buying you training speed.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="2">
+  <div class="qz">Your quadratic loss has $L=\lambda_{\max}=50$. Which fixed step size is guaranteed to converge?</div>
+  <button class="opt">$\eta=0.1$ is too small to ever work.</button>
+  <button class="opt">Any $\eta<2/L=0.04$.</button>
+  <button class="opt">$\eta=0.05$, since bigger is always faster.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="1">
+  <div class="qz">Momentum helps most when…</div>
+  <button class="opt">the problem is ill-conditioned (large $\kappa$) — it cuts iterations from $\sim\kappa$ to $\sim\sqrt\kappa$.</button>
+  <button class="opt">the problem is already perfectly conditioned ($\kappa=1$).</button>
+  <button class="opt">the learning rate is above $2/L$.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>$\eta$ just below $2/L$</strong> converges but oscillates; $\eta=1/L$ is the smooth, safe default.</li>
+  <li><strong>Momentum can overshoot:</strong> too-large $\beta$ makes the ball roll past the minimum and ring; typical $\beta\in[0.9,0.99]$.</li>
+  <li><strong>Non-convex reality:</strong> these clean rates are for (strongly) convex $f$; deep nets only obey them locally near a minimum.</li>
+  <li><strong>SGD needs a schedule:</strong> a constant step leaves you bouncing in a noise ball around the optimum.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · One learning rate for everything</span>The safe $\eta$ depends on $L$, which differs per problem (and per layer). A rate that trains one model diverges another — tune it, or go adaptive (Session 08).</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Blaming the model for slow training</span>Slow convergence is often <em>conditioning</em>, not capacity. Scale features / normalize before assuming you need a bigger model.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Cranking momentum to fix a bad LR</span>Momentum accelerates a <em>stable</em> method; it won't rescue a divergent step size and can amplify the blow-up.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>Safe step: <strong>$0<\eta<2/L$</strong>; sensible default $\eta=1/L$; best for a quadratic $\eta^\star=\tfrac{2}{\lambda_{\min}+\lambda_{\max}}$.</li>
+  <li>Rates: <strong>$O(1/k)$ convex, linear (geometric) strongly convex</strong>.</li>
+  <li>Iterations scale with <strong>$\kappa$</strong> for GD — lower $\kappa$, faster training.</li>
+  <li><strong>Momentum / Nesterov</strong> cut that to $\sqrt\kappa$; Nesterov is optimal ($O(1/k^2)$ convex).</li>
+  <li><strong>SGD</strong> trades exactness for cheap steps; use a decreasing schedule.</li>
+  <li>Real training = <strong>mini-batches + momentum + schedule</strong>.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Implement and time each; the iteration counts tell the story.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Run GD on $\operatorname{diag}(1,\kappa)$ for $\kappa\in\{1,10,100\}$ with the optimal step and confirm iterations grow with $\kappa$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">for</span> kap <span class="k">in</span> (<span class="n">1</span>,<span class="n">10</span>,<span class="n">100</span>):
+    A=np.diag([<span class="n">1.</span>,<span class="f">float</span>(kap)]); gd(A,np.array([<span class="n">1.</span>,<span class="n">1.</span>]),<span class="n">2</span>/(<span class="n">1</span>+kap))
+<span class="c"># 1, 94, 939 -> linear in kappa</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>On $\operatorname{diag}(1,10)$, show $\eta=0.25$ diverges while $\eta=0.18$ converges, and explain via $2/L$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$L=10$ so the stability bound is $\eta<2/L=0.2$. $\eta=0.18<0.2$ ⇒ every $|1-\eta\lambda_i|<1$ ⇒ converges. $\eta=0.25>0.2$ ⇒ $|1-0.25\cdot10|=1.5>1$ ⇒ the $\lambda=10$ component grows by $1.5\times$ each step ⇒ diverges.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Add heavy-ball momentum and compare its iteration count to plain GD at $\kappa=100$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">A=np.diag([<span class="n">1.</span>,<span class="n">100.</span>]); sk=np.sqrt(<span class="n">100</span>)
+gd(A,np.array([<span class="n">1.</span>,<span class="n">1.</span>]),<span class="n">2</span>/<span class="n">101</span>)                                <span class="c"># 939</span>
+heavy_ball(A,np.array([<span class="n">1.</span>,<span class="n">1.</span>]),(<span class="n">2</span>/(<span class="n">1</span>+sk))**<span class="n">2</span>,((sk-<span class="n">1</span>)/(sk+<span class="n">1</span>))**<span class="n">2</span>)   <span class="c"># 119</span></pre>
+    <p>~8× fewer steps — the $\sqrt\kappa$ vs $\kappa$ improvement in action.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Empirically estimate the convergence factor $\rho$ of GD at $\kappa=10$ by the ratio $\lVert x_{k+1}\rVert/\lVert x_k\rVert$, and compare to $(\kappa-1)/(\kappa+1)$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">A=np.diag([<span class="n">1.</span>,<span class="n">10.</span>]); x=np.array([<span class="n">0.</span>,<span class="n">1.</span>]); eta=<span class="n">2</span>/<span class="n">11</span>
+r=[]
+<span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">50</span>):
+    xn=x-eta*(A@x); r.append(np.linalg.norm(xn)/np.linalg.norm(x)); x=xn
+<span class="f">print</span>(r[-<span class="n">1</span>], (<span class="n">10</span>-<span class="n">1</span>)/(<span class="n">10</span>+<span class="n">1</span>))   <span class="c"># ~0.818, 0.818</span></pre>
+    <p>Starting along the worst (largest-$\kappa$) eigen-direction, the ratio settles at exactly $(\kappa-1)/(\kappa+1)=0.818$.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Simulate SGD on a noisy quadratic with a constant vs a $1/k$-decaying step, and show only the decaying schedule converges.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">rng=np.random.default_rng(<span class="n">0</span>); A=np.diag([<span class="n">1.</span>,<span class="n">5.</span>])
+<span class="k">def</span> <span class="f">sgd</span>(decay):
+    x=np.array([<span class="n">1.</span>,<span class="n">1.</span>])
+    <span class="k">for</span> k <span class="k">in</span> <span class="f">range</span>(<span class="n">1</span>,<span class="n">5000</span>):
+        eta=<span class="n">0.1</span>/k <span class="k">if</span> decay <span class="k">else</span> <span class="n">0.1</span>
+        g=A@x + rng.normal(<span class="n">0</span>,<span class="n">0.3</span>,<span class="n">2</span>)          <span class="c"># noisy gradient</span>
+        x=x-eta*g
+    <span class="k">return</span> np.linalg.norm(x)
+sgd(<span class="k">True</span>), sgd(<span class="k">False</span>)   <span class="c"># ~0.00x  vs  ~0.1 (bounces in a noise ball)</span></pre>
+    <p>The constant step never settles — it hovers in a noise ball whose size $\propto\eta$. The $1/k$ schedule shrinks the step fast enough to converge (while $\sum\eta_k=\infty$ still lets it travel).</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Every training run:</strong> the learning rate, its schedule, and momentum are this session's knobs.</li>
+  <li><strong>Why normalization helps:</strong> batch/layer norm and feature scaling lower $\kappa$, and $\kappa$ sets the step count.</li>
+  <li><strong>SGD's generalization:</strong> gradient noise escapes saddles and sharp minima — a feature, not just a cost.</li>
+  <li><strong>Debugging divergence:</strong> loss to NaN usually means $\eta$ crept past $2/L$.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What's the safe range for the learning rate on an $L$-smooth loss?</div><div class="a">$0<\eta<2/L$; $\eta=1/L$ is a smooth default. Above $2/L$ the largest eigen-component grows and it diverges.</div></div>
+<div class="qa"><div class="q">Q2 · How does the condition number affect gradient descent?</div><div class="a">Iterations to a fixed accuracy scale linearly with $\kappa$; the per-step contraction is $(\kappa-1)/(\kappa+1)$. Large $\kappa$ ⇒ zig-zag and slow.</div></div>
+<div class="qa"><div class="q">Q3 · Why does momentum speed things up?</div><div class="a">It accumulates velocity so consistent directions build up and oscillations cancel, improving the rate from $\kappa$ to $\sqrt\kappa$.</div></div>
+<div class="qa"><div class="q">Q4 · What does Nesterov acceleration achieve?</div><div class="a">$O(1/k^2)$ for smooth convex problems — the optimal first-order rate — by evaluating the gradient at a look-ahead point.</div></div>
+<div class="qa"><div class="q">Q5 · Why does SGD need a decreasing step size?</div><div class="a">Gradient noise keeps a constant-step iterate bouncing in a ball around the optimum; a schedule with $\sum\eta_k=\infty,\sum\eta_k^2<\infty$ lets it both travel and settle.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Step rule $\eta<2/L$</td><td>Stability; avoiding divergence</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Convex $O(1/k)$ / strongly-convex linear</td><td>How fast you converge</td><td class="freq f-h">High</td></tr>
+  <tr><td>Iterations $\propto\kappa$</td><td>Why conditioning &amp; normalization matter</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Momentum → $\sqrt\kappa$</td><td>The standard speed-up</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Nesterov $O(1/k^2)$</td><td>Optimal first-order acceleration</td><td class="freq f-h">High</td></tr>
+  <tr><td>SGD + schedule</td><td>Scales training to big data</td><td class="freq f-vh">Very high</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Speed is set by conditioning; momentum takes the square root.</div>
+  <p><span class="cc-sub">Reusable idea:</span> gradient descent's rate is not a mystery — it's spectral.</p>
+  <ul>
+    <li><strong>Step size:</strong> $0<\eta<2/L$; too big diverges, too small crawls.</li>
+    <li><strong>Rate:</strong> $O(1/k)$ convex, linear when strongly convex; iterations scale with $\kappa=\lambda_{\max}/\lambda_{\min}$.</li>
+    <li><strong>Momentum / Nesterov</strong> cut iterations from $\sim\kappa$ to $\sim\sqrt\kappa$ by cancelling zig-zag.</li>
+    <li><strong>SGD</strong> makes each step cheap and noisy — use a schedule; the noise even helps generalization.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> if training is slow, suspect the condition number before the model. Lower $\kappa$ (scale, normalize, precondition) or replace it with $\sqrt\kappa$ (momentum) — that single lever explains learning-rate tuning, batch norm, and why Adam exists.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>08 · Adaptive &amp; second-order methods →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">Momentum used history; now use <em>curvature</em>. Newton's method, quasi-Newton (BFGS/L-BFGS), and the adaptive family (AdaGrad → RMSProp → Adam) that gives every parameter its own learning rate. <em>(Completes Pillar II.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

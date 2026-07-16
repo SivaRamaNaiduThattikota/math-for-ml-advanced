@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Adaptive & Second-Order Methods · Math for ML · Advanced</title>
+<meta name="description" content="Newton's method uses curvature to jump to the minimum; quasi-Newton approximates it cheaply; and AdaGrad → RMSProp → Adam give each parameter its own learning rate.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Adaptive & Second-Order Methods · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="08_adaptive_second_order">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Newton's method</a>
+  <a href="#s2">2 · The cost of curvature</a>
+  <a href="#s3">3 · Quasi-Newton</a>
+  <a href="#s4">4 · Adaptive: AdaGrad→Adam</a>
+  <a href="#s5">5 · Adam as preconditioning</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Convex Optimization · 08</div>
+    <h1>Adaptive &amp; Second-Order Methods</h1>
+    <p class="lede">Momentum used the past. Now use the <em>curvature</em>. Newton's method jumps to the bottom of a bowl in one step; when the full Hessian is too expensive, quasi-Newton and Adam approximate it — which is why Adam barely needs tuning.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Sessions 02, 03, 07</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Gradient descent knows which way is downhill but not how the ground curves, so it stumbles on ill-conditioned bowls. <strong>Second-order methods</strong> fix that by using the Hessian — the curvature of Session 02 — to take a perfectly scaled step. Newton's method is the ideal: on a quadratic it reaches the minimum in <em>one</em> step. It's too expensive at scale, so the practical world uses cheaper stand-ins — quasi-Newton for classic ML, and the adaptive family (AdaGrad → RMSProp → <strong>Adam</strong>) for deep learning, which approximates curvature per-coordinate on the cheap.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Derive Newton's step $-H^{-1}\nabla f$ and explain its scale-invariance and quadratic convergence.</li>
+    <li>Say why full Newton is infeasible at scale ($O(n^3)$ solve, $O(n^2)$ storage).</li>
+    <li>Describe quasi-Newton (BFGS / L-BFGS) as building a cheap inverse-Hessian estimate from gradients.</li>
+    <li>Write the AdaGrad, RMSProp, and <strong>Adam</strong> updates and see how they add up.</li>
+    <li>Explain Adam as cheap <em>diagonal preconditioning</em> — a per-parameter learning rate.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Nocedal &amp; Wright, <em>Numerical Optimization</em> <span class="secs">Ch 3 (Newton/line search), Ch 6–7 (quasi-Newton, L-BFGS)</span>; Goodfellow et al., <em>Deep Learning</em> <span class="secs">§8.5 (AdaGrad/RMSProp/Adam)</span>; Kingma &amp; Ba 2015 (Adam).</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Newton's method</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">The cost of curvature</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">Quasi-Newton (BFGS / L-BFGS)</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Adaptive: AdaGrad → RMSProp → Adam</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Adam as diagonal preconditioning</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$H=\nabla^2 f$</span><span class="def">Hessian — curvature matrix (Sessions 02–03).</span>
+    <span class="sym">$-H^{-1}\nabla f$</span><span class="def">The Newton step.</span>
+    <span class="sym">$B_k\approx H^{-1}$</span><span class="def">Quasi-Newton's running estimate of the inverse Hessian.</span>
+    <span class="sym">$m_t,\,v_t$</span><span class="def">Adam's first/second moment estimates (EMA of $g$ and $g^2$).</span>
+    <span class="sym">$\hat m,\hat v$</span><span class="def">Bias-corrected moments; $\beta_1,\beta_2$ are their decay rates.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Newton's method — step with the curvature</h2>
+<p>Approximate $f$ near $x_k$ by its second-order Taylor model (Session 03) and jump to the minimum of that <em>model</em>. Minimizing $f(x_k)+\nabla f^\top d+\tfrac12 d^\top H d$ over $d$ gives $d=-H^{-1}\nabla f$, so:</p>
+<div class="mathband">$$ x_{k+1} = x_k - H(x_k)^{-1}\,\nabla f(x_k). $$</div>
+<p>Where plain GD uses a scalar step $\eta$, Newton uses the <strong>full curvature</strong> $H^{-1}$ to rescale <em>and</em> rotate the step. Two consequences:</p>
+<ul>
+  <li><strong>Scale-invariant:</strong> Newton doesn't care about the condition number — it undoes the stretch. No learning rate to tune, no zig-zag.</li>
+  <li><strong>One step on a quadratic; quadratic convergence near any minimum:</strong> the number of correct digits roughly <em>doubles</em> each iteration.</li>
+</ul>
+<div class="callout c-good"><span class="tag">Verified</span>
+On the quadratic with $H=\begin{bmatrix}3&1\\1&2\end{bmatrix}$, Newton from $x_0=[5,-4]$ lands on the exact minimizer $[0.2,0.4]$ in <strong>one step</strong> (E1). And on the non-quadratic $f(x)=e^x-2x$ (min at $\ln 2$), the error goes $3.1\text{e-}1\to4.3\text{e-}2\to9.0\text{e-}4\to4.0\text{e-}7\to8.0\text{e-}14$ (E2) — squaring each step. That's quadratic convergence.</div>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>Why we can't just use Newton</h2>
+<p>Newton is the gold standard — and impractical at ML scale. For $n$ parameters:</p>
+<ul>
+  <li><strong>Storage $O(n^2)$:</strong> the Hessian of a model with $10^8$ parameters would need $10^{16}$ entries. Impossible.</li>
+  <li><strong>Solve $O(n^3)$:</strong> inverting/solving with $H$ each step dwarfs the gradient's $O(n)$.</li>
+  <li><strong>Indefinite Hessians:</strong> away from a minimum (deep nets are full of saddles, Session 02) $H$ isn't PD, so $-H^{-1}\nabla f$ can step <em>uphill</em>. Needs damping/trust regions.</li>
+</ul>
+<p>So the field builds <strong>approximations</strong>: use gradient history to estimate $H^{-1}$ (quasi-Newton), or approximate only its diagonal per-coordinate (Adam). Everything below is "Newton on a budget."</p>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>Quasi-Newton: BFGS &amp; L-BFGS</h2>
+<p><strong>Quasi-Newton</strong> methods never form $H$. They maintain a running estimate $B_k\approx H^{-1}$ and update it from successive gradient differences — the change in gradient across a step reveals curvature (the <em>secant condition</em>). <strong>BFGS</strong> is the classic update; it converges superlinearly using only gradients.</p>
+<p><strong>L-BFGS</strong> ("limited-memory") stores just the last $m$ gradient/step pairs (say $m=10$) instead of a full $n\times n$ matrix — $O(mn)$ memory. It's the workhorse for smooth, medium-scale problems: logistic regression, CRFs, and <code>scipy.optimize.minimize(method="L-BFGS-B")</code>.</p>
+<div class="callout c-warn"><span class="tag">Why not L-BFGS for deep nets?</span>
+It assumes a fairly smooth, deterministic objective. Mini-batch gradient <em>noise</em> corrupts the curvature estimate, and huge parameter counts strain even limited memory. So deep learning went a different way — cheap, noise-tolerant, per-coordinate adaptivity.</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Adaptive methods: AdaGrad → RMSProp → Adam</h2>
+<p>These give <strong>each parameter its own learning rate</strong>, inferred from the size of its recent gradients — a cheap, diagonal stand-in for curvature. They build on one another:</p>
+
+<h3>AdaGrad — accumulate squared gradients</h3>
+<div class="mathband">$$ G_t = G_{t-1}+g_t^2, \qquad x_{t+1}=x_t-\frac{\eta}{\sqrt{G_t}+\epsilon}\,g_t. $$</div>
+<p>Coordinates with big gradients get a smaller step. Great for sparse features — but $G_t$ only grows, so the effective rate decays to zero and learning stalls.</p>
+
+<h3>RMSProp — forget the distant past</h3>
+<div class="mathband">$$ v_t=\beta v_{t-1}+(1-\beta)g_t^2, \qquad x_{t+1}=x_t-\frac{\eta}{\sqrt{v_t}+\epsilon}\,g_t. $$</div>
+<p>Replace the growing sum with an <strong>exponential moving average</strong>, so old gradients fade and the rate doesn't collapse. Fixes AdaGrad's decay.</p>
+
+<h3>Adam — RMSProp + momentum + bias correction</h3>
+<div class="mathband">$$ \begin{aligned}
+m_t&=\beta_1 m_{t-1}+(1-\beta_1)g_t, & v_t&=\beta_2 v_{t-1}+(1-\beta_2)g_t^2 \\
+\hat m_t&=\frac{m_t}{1-\beta_1^t}, & \hat v_t&=\frac{v_t}{1-\beta_2^t} \\
+x_{t+1}&=x_t-\eta\,\dfrac{\hat m_t}{\sqrt{\hat v_t}+\epsilon}
+\end{aligned} $$</div>
+<p>Adam keeps a momentum term ($m$, smoothed gradient) <em>and</em> a per-coordinate scale ($v$, smoothed squared gradient), with <strong>bias correction</strong> ($1-\beta^t$) so the early steps aren't dragged toward zero by the zero-initialized averages. Defaults $\beta_1{=}0.9,\ \beta_2{=}0.999,\ \eta{=}10^{-3}$ work across a huge range of problems — which is why Adam is the default deep-learning optimizer.</p>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="optplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">optimizer</span>
+      <button class="ctrl active" data-opt="gd">GD</button>
+      <button class="ctrl" data-opt="adam">Adam</button>
+      <button class="ctrl" data-opt="newton">Newton</button>
+    </div>
+    <div class="slider-row"><span>κ</span><input type="range" id="sK" min="1" max="80" step="1" value="40"><span>lr</span><input type="range" id="sLr" min="0.01" max="0.5" step="0.01" value="0.15"></div>
+    <div class="readout">
+      <span><span class="k">steps to converge</span> = <span class="va" id="rSteps">…</span></span>
+      <span><span class="k">note</span> = <span class="vd" id="rNote">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Three optimizers on the same bowl.</strong> <b>GD</b> zig-zags and slows as $\kappa$ grows. <b>Adam</b> rescales each axis by its own gradient history, so its path drives much straighter down the valley — cheap diagonal curvature. <b>Newton</b> uses the exact Hessian and reaches the minimum in a single leap, regardless of $\kappa$ — the ideal, if only it were affordable at scale.</figcaption>
+</figure>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Adam is cheap diagonal preconditioning</h2>
+<p>Here's the unifying idea. Dividing each coordinate's step by $\sqrt{\hat v}$ (its typical gradient magnitude) rescales the axes so they all "feel" the same — exactly what a <strong>diagonal approximation to $H^{-1}$</strong> does. Adam is Newton's curvature-scaling, but using only the diagonal, estimated cheaply from gradients, with momentum on top.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+On the ill-conditioned $\operatorname{diag}(1,100)$ quadratic, plain GD needs <strong>709</strong> steps to tolerance $10^{-6}$; Adam needs <strong>189</strong> (E3). And given a lopsided gradient $[0.2,\,20]$, Adam's first step is $[0.1,\,0.1]$ (E4) — it normalizes both coordinates to the same size despite the $100\times$ scale gap. That per-coordinate equalization is why Adam tolerates bad conditioning with almost no tuning.</div>
+<div class="callout c-anchor"><span class="tag">The trade it makes</span>
+Adam buys robustness and speed on messy, ill-conditioned, stochastic losses. The price: it's a <em>diagonal</em> approximation (ignores cross-curvature) and can generalize slightly worse than well-tuned SGD+momentum on some vision tasks. That's why both are still in use — Adam for "just works," SGD+momentum when you'll tune carefully.</div>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+
+<span class="c"># Newton solves a quadratic in ONE step</span>
+A = np.array([[<span class="n">3.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">2.</span>]]); b = np.array([<span class="n">1.</span>,<span class="n">1.</span>])
+x = np.array([<span class="n">5.</span>,<span class="n">-4.</span>])
+x = x - np.linalg.solve(A, A@x - b)          <span class="c"># H=A, grad=Ax-b</span>
+<span class="f">print</span>(x)                                      <span class="c"># [0.2 0.4] = A^-1 b  (exact)</span>
+
+<span class="c"># Adam beats plain GD on an ill-conditioned quadratic</span>
+A = np.diag([<span class="n">1.</span>, <span class="n">100.</span>])
+<span class="k">def</span> <span class="f">adam</span>(lr, iters=<span class="n">20000</span>, tol=<span class="n">1e-6</span>, b1=<span class="n">0.9</span>, b2=<span class="n">0.999</span>, eps=<span class="n">1e-8</span>):
+    x = np.array([<span class="n">1.</span>,<span class="n">1.</span>]); m = np.zeros(<span class="n">2</span>); v = np.zeros(<span class="n">2</span>)
+    <span class="k">for</span> t <span class="k">in</span> <span class="f">range</span>(<span class="n">1</span>, iters+<span class="n">1</span>):
+        g = A@x
+        m = b1*m + (<span class="n">1</span>-b1)*g;  v = b2*v + (<span class="n">1</span>-b2)*g*g
+        mh = m/(<span class="n">1</span>-b1**t); vh = v/(<span class="n">1</span>-b2**t)
+        x = x - lr*mh/(np.sqrt(vh)+eps)
+        <span class="k">if</span> np.linalg.norm(x) &lt; tol: <span class="k">return</span> t
+    <span class="k">return</span> iters
+<span class="f">print</span>(adam(<span class="n">0.1</span>))                              <span class="c"># 189   (plain GD needs 709)</span></pre>
+<div class="out">[0.2 0.4]
+189</div>
+
+<div class="callout c-good"><span class="tag">Reading the ladder</span>
+AdaGrad (accumulate $g^2$) → RMSProp (EMA of $g^2$, fixes decay) → Adam (+ momentum + bias correction). Each line is one small fix to the previous. Knowing the ladder tells you exactly what each optimizer's hyperparameters do.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="2">
+  <div class="qz">Newton's method reaches the exact minimum of a quadratic in…</div>
+  <button class="opt">the same number of steps as gradient descent.</button>
+  <button class="opt">one step (it uses the exact curvature).</button>
+  <button class="opt">infinitely many steps.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="1">
+  <div class="qz">Adam's per-coordinate division by $\sqrt{\hat v_t}$ is best understood as…</div>
+  <button class="opt">a cheap diagonal approximation to preconditioning by $H^{-1}$.</button>
+  <button class="opt">a form of weight decay.</button>
+  <button class="opt">the exact Newton step.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Newton needs a PD Hessian:</strong> at a saddle $H$ is indefinite and $-H^{-1}\nabla f$ may go uphill — use damping, trust regions, or a Gauss-Newton PSD approximation.</li>
+  <li><strong>Bias correction matters early:</strong> without $1/(1-\beta^t)$, Adam's first steps are tiny (moments start at 0).</li>
+  <li><strong>Adam ≠ always best:</strong> tuned SGD+momentum can generalize better; AdamW (decoupled weight decay) usually beats vanilla Adam.</li>
+  <li><strong>L-BFGS for smooth/deterministic problems;</strong> it degrades under heavy mini-batch noise.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Full Newton on a big model</span>Forming an $n\times n$ Hessian for $n=10^7$ is $10^{14}$ numbers — infeasible. Use diagonal/quasi/Gauss-Newton approximations instead.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Trusting Newton far from the optimum</span>Its quadratic convergence is <em>local</em>; far away (or at a saddle) the raw step can diverge. Line search / trust region required.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Adam with a huge learning rate</span>Adaptivity is not immunity — a too-large $\eta$ still diverges. Adam's default $10^{-3}$ is a starting point, not a guarantee.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li><strong>Newton:</strong> $x-H^{-1}\nabla f$ — scale-invariant, one step on a quadratic, quadratic convergence locally.</li>
+  <li>Full Newton is $O(n^2)$ memory / $O(n^3)$ per step — <strong>infeasible at ML scale</strong>.</li>
+  <li><strong>Quasi-Newton (L-BFGS)</strong> estimates $H^{-1}$ from gradients — great for smooth, medium-scale problems.</li>
+  <li>Adaptive ladder: <strong>AdaGrad → RMSProp → Adam</strong>, each fixing the last.</li>
+  <li><strong>Adam</strong> = momentum + per-coordinate $1/\sqrt{\hat v}$ scaling + bias correction ≈ cheap diagonal preconditioning.</li>
+  <li>Adam for "just works"; <strong>SGD+momentum</strong> when you'll tune for best generalization.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Implement each optimizer and watch the iteration counts.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Show Newton solves $\min\tfrac12 x^\top Ax-b^\top x$ in one step for $A=\begin{bmatrix}3&1\\1&2\end{bmatrix}$, $b=[1,1]$, from any start.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">A=np.array([[<span class="n">3.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">2.</span>]]); b=np.array([<span class="n">1.</span>,<span class="n">1.</span>])
+x=np.array([<span class="n">5.</span>,<span class="n">-4.</span>]); x - np.linalg.solve(A, A@x - b)   <span class="c"># [0.2 0.4] = A^-1 b</span></pre>
+    <p>The Newton step $-H^{-1}\nabla f=-A^{-1}(Ax-b)$ sends any $x$ straight to $A^{-1}b$ — because the quadratic model <em>is</em> the function.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-m">medium</span><p>Minimize $f(x)=e^x-2x$ with Newton from $x_0=1$ and print the error each iteration to observe quadratic convergence.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">import</span> math; xs=math.log(<span class="n">2</span>); x=<span class="n">1.0</span>
+<span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">5</span>):
+    <span class="f">print</span>(<span class="f">abs</span>(x-xs)); x = x-(math.exp(x)-<span class="n">2</span>)/math.exp(x)
+<span class="c"># 3.1e-1, 4.3e-2, 9.0e-4, 4.0e-7, 8.0e-14  -> error squares</span></pre>
+    <p>Each error is roughly the previous one squared — the hallmark of quadratic convergence (correct digits double per step).</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Implement Adam and compare its iteration count to plain GD on $\operatorname{diag}(1,100)$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Using the <code>adam</code> function above: Adam reaches tol $10^{-6}$ in <strong>189</strong> steps vs plain GD's <strong>709</strong> — the per-coordinate scaling effectively conditions the problem.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-e">easy</span><p>Given a lopsided gradient $g=[0.2, 20]$, compute Adam's first step and explain the result.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">g=np.array([<span class="n">0.2</span>,<span class="n">20.</span>]); m=(<span class="n">1</span>-<span class="n">0.9</span>)*g; v=(<span class="n">1</span>-<span class="n">0.999</span>)*g*g
+mh=m/(<span class="n">1</span>-<span class="n">0.9</span>); vh=v/(<span class="n">1</span>-<span class="n">0.999</span>)
+<span class="n">0.1</span>*mh/(np.sqrt(vh)+<span class="n">1e-8</span>)   <span class="c"># [0.1 0.1]</span></pre>
+    <p>Dividing each coordinate by its own $\sqrt{\hat v}\approx|g|$ makes both steps $\approx\pm\eta$, despite the $100\times$ gradient-scale gap. Adam equalizes the axes.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Contrast Newton's $O(n^3)$ cost with Adam's $O(n)$, and explain when each is the right choice.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Newton forms and solves with an $n\times n$ Hessian: $O(n^2)$ memory, $O(n^3)$ per step — fine for $n$ in the hundreds/thousands (calibration, small logistic/GLM), impossible for $n\sim10^7$. Adam stores two $O(n)$ moment vectors and does $O(n)$ work per step, tolerating stochastic gradients — the only viable option for deep nets. Rule: <strong>exact curvature when $n$ is small and the objective smooth; diagonal/adaptive curvature when $n$ is huge and gradients are noisy.</strong></p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Deep learning:</strong> Adam / AdamW are the default optimizers; this session is their derivation.</li>
+  <li><strong>Classic ML:</strong> L-BFGS trains logistic regression, CRFs, and many <code>scipy</code> fits.</li>
+  <li><strong>Calibration &amp; small models:</strong> full Newton (or Gauss-Newton / IRLS) when parameters are few.</li>
+  <li><strong>Hyperparameter intuition:</strong> knowing the AdaGrad→Adam ladder tells you what $\beta_1,\beta_2,\epsilon$ actually control.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What is Newton's method and why is it fast?</div><div class="a">$x\leftarrow x-H^{-1}\nabla f$. It uses exact curvature, so it's scale-invariant, solves a quadratic in one step, and converges quadratically near a minimum.</div></div>
+<div class="qa"><div class="q">Q2 · Why isn't Newton used to train deep nets?</div><div class="a">$O(n^2)$ storage and $O(n^3)$ per-step cost for the Hessian are infeasible at millions of parameters, and $H$ is indefinite at the many saddles.</div></div>
+<div class="qa"><div class="q">Q3 · What does L-BFGS do?</div><div class="a">Approximates $H^{-1}$ from the last $m$ gradient/step pairs (limited memory), giving superlinear convergence on smooth, deterministic problems using only gradients.</div></div>
+<div class="qa"><div class="q">Q4 · Walk through Adam's update.</div><div class="a">EMA of gradients $m$ (momentum) and squared gradients $v$ (scale), bias-correct both, then step $-\eta\,\hat m/(\sqrt{\hat v}+\epsilon)$ — momentum with a per-coordinate learning rate.</div></div>
+<div class="qa"><div class="q">Q5 · How is Adam related to second-order methods?</div><div class="a">Dividing by $\sqrt{\hat v}$ is a cheap diagonal approximation to preconditioning by $H^{-1}$ — Newton-style axis rescaling using only gradient statistics.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Newton $-H^{-1}\nabla f$</td><td>Ideal curvature step; scale-invariant</td><td class="freq f-h">High</td></tr>
+  <tr><td>$O(n^3)$ cost</td><td>Why Newton doesn't scale</td><td class="freq f-h">High</td></tr>
+  <tr><td>Quasi-Newton / L-BFGS</td><td>Classic-ML training; scipy</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>AdaGrad → RMSProp → Adam</td><td>The deep-learning optimizer ladder</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Adam = diagonal preconditioning</td><td>Why it tolerates bad conditioning</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Adam vs SGD+momentum</td><td>"Just works" vs best-tuned generalization</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Use curvature to step — exactly (Newton) or on a budget (Adam).</div>
+  <p><span class="cc-sub">Reusable idea:</span> the fix for ill-conditioning is to rescale the step by the curvature.</p>
+  <ul>
+    <li><strong>Newton</strong> $x-H^{-1}\nabla f$: scale-invariant, one step on a quadratic, quadratic convergence — but $O(n^3)$, so it doesn't scale.</li>
+    <li><strong>Quasi-Newton (L-BFGS)</strong> estimates $H^{-1}$ from gradients; ideal for smooth, medium-scale problems.</li>
+    <li><strong>Adam</strong> = momentum + per-coordinate $1/\sqrt{\hat v}$ + bias correction ≈ cheap <em>diagonal</em> preconditioning — the deep-learning default.</li>
+    <li>The ladder <strong>AdaGrad → RMSProp → Adam</strong> is three small fixes; each hyperparameter maps to one of them.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> every optimizer past plain GD is trying to approximate Newton's curvature-scaled step cheaply enough to afford. Adam wins in deep learning because a diagonal, gradient-only, noise-tolerant approximation is exactly what a giant stochastic problem can pay for.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Pillar complete →</span>
+  <h3>Pillar III · Probabilistic Modeling &amp; Inference</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">With optimization in hand, we turn to the other half of ML: quantifying uncertainty. Multivariate Gaussians, exponential families, maximum likelihood &amp; Fisher information, and inference at scale (MCMC, variational). <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>
