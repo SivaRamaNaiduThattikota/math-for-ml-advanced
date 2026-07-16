@@ -197,6 +197,25 @@ Fit any model by MLE, take the Hessian of the NLL at the optimum, invert it — 
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<div class="dgrid">
+  <div><div class="dcap">High Fisher info — sharp peak</div>
+    <svg viewBox="0 0 220 130" role="img" aria-label="sharply peaked log-likelihood"><path d="M20,120 C90,120 100,20 110,20 C120,20 130,120 200,120" fill="rgba(90,79,207,.12)" stroke="#5A4FCF" stroke-width="2.5"/>
+      <line x1="110" y1="20" x2="110" y2="120" stroke="#5B3FE0" stroke-width="1.4" stroke-dasharray="3 3"/>
+      <text x="118" y="70" font-family="JetBrains Mono,monospace" font-size="10" fill="#5B3FE0">tight → low variance</text></svg></div>
+  <div><div class="dcap">Low Fisher info — flat peak</div>
+    <svg viewBox="0 0 220 130" role="img" aria-label="flat log-likelihood"><path d="M20,120 C70,120 80,60 110,60 C140,60 150,120 200,120" fill="rgba(193,58,87,.10)" stroke="#C13A57" stroke-width="2.5"/>
+      <line x1="110" y1="60" x2="110" y2="120" stroke="#C13A57" stroke-width="1.4" stroke-dasharray="3 3"/>
+      <text x="60" y="52" font-family="JetBrains Mono,monospace" font-size="10" fill="#C13A57">flat → high variance</text></svg></div>
+</div>
+<div class="dcap" style="margin-top:10px">Fisher information = curvature of the log-likelihood peak = precision of the estimate</div>
+</div>
+<figcaption><strong>Figure 2 — Sharp vs flat likelihood.</strong> A second view of what Fisher information means: a sharply curved peak (left) pins the parameter down tightly — high information, low-variance estimate; a flat peak (right) leaves many values almost equally likely — low information, high variance. The Cramér–Rao floor $1/(nI)$ is the inverse of that curvature.</figcaption>
+</figure>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+Fitting by MLE is an optimization (Pillars II); getting <strong>standard errors</strong> means the observed Fisher information — the Hessian of the negative log-likelihood at the optimum — which is $O(n_\text{params}^2)$ to form and $O(n_\text{params}^3)$ to invert. For large models this is infeasible, so uncertainty is approximated with the <em>diagonal</em> of the Fisher, K-FAC (block-diagonal), or a Laplace approximation — the same cost pressure as Newton in Session 08.</div>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>

@@ -222,6 +222,34 @@ Watch the <strong>train–test gap</strong>. Small gap + high error = underfit (
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 470 230" role="img" aria-label="training error falling and test error U-shaped versus model complexity">
+  <g font-family="JetBrains Mono, monospace" font-size="11">
+    <line x1="50" y1="20" x2="50" y2="195" stroke="#C9C4B6" stroke-width="1.4"/>
+    <line x1="50" y1="195" x2="440" y2="195" stroke="#C9C4B6" stroke-width="1.4"/>
+    <text x="245" y="222" text-anchor="middle" fill="#6E6C7A">model complexity →</text>
+    <text x="16" y="105" fill="#6E6C7A" transform="rotate(-90 16 105)" text-anchor="middle">error</text>
+    <!-- train error: monotonic down -->
+    <path d="M65,55 C160,120 260,178 430,190" fill="none" stroke="#0E8C80" stroke-width="2.6"/>
+    <text x="360" y="180" fill="#0E8C80">train</text>
+    <!-- test error: U-shaped -->
+    <path d="M65,70 Q190,205 250,180 Q345,150 430,60" fill="none" stroke="#5A4FCF" stroke-width="2.6"/>
+    <text x="360" y="70" fill="#5A4FCF">test</text>
+    <!-- sweet spot -->
+    <line x1="250" y1="20" x2="250" y2="195" stroke="#B07514" stroke-width="1.3" stroke-dasharray="4 4"/>
+    <text x="250" y="16" text-anchor="middle" fill="#B07514">sweet spot</text>
+    <text x="120" y="40" fill="#9C99A6" font-size="10">underfit (high bias)</text>
+    <text x="330" y="40" fill="#9C99A6" font-size="10">overfit (high variance)</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">Training error falls with complexity; test error is U-shaped — the widening gap is overfitting</div>
+</div>
+<figcaption><strong>Figure 2 — The complexity dial.</strong> A second view of the trade-off: as complexity grows, training error (teal) keeps falling, but test error (indigo) is U-shaped — high at the left from bias, high at the right from variance. The minimum is the sweet spot; the growing gap between the curves on the right <em>is</em> the generalization bound in action.</figcaption>
+</figure>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+The scarce resource here is <strong>data, not FLOPs</strong>: sample complexity to reach error $\varepsilon$ grows like $\text{VC}/\varepsilon^2$ (or $\ln|\mathcal H|/\varepsilon$ for finite classes) — the price is labeled examples. VC dimension is generally intractable to compute exactly, so in practice you locate the sweet spot by <strong>cross-validation</strong>, costing $k\times$ the training work. To shrink the gap you usually buy more data, not more compute.</div>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>

@@ -204,6 +204,29 @@ $\log p(x)=\text{ELBO}+\mathrm{KL}(q\,\|\,\text{posterior})$. Fixed evidence, no
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 420 210" role="img" aria-label="ELBO plus KL equals fixed log evidence, for a poor and a good q">
+  <g font-family="JetBrains Mono, monospace" font-size="11" text-anchor="middle">
+    <line x1="24" y1="40" x2="396" y2="40" stroke="#9C99A6" stroke-width="1.4" stroke-dasharray="5 4"/>
+    <text x="360" y="32" fill="#6E6C7A">log p(x) (fixed)</text>
+    <!-- poor q -->
+    <rect x="95" y="118" width="72" height="72" fill="rgba(90,79,207,.55)" stroke="#5A4FCF"/><text x="131" y="160" fill="#fff">ELBO</text>
+    <rect x="95" y="40" width="72" height="78" fill="rgba(193,58,87,.30)" stroke="#C13A57"/><text x="131" y="84" fill="#C13A57">KL</text>
+    <text x="131" y="204" fill="#26252E">poor q</text>
+    <!-- good q -->
+    <rect x="255" y="58" width="72" height="132" fill="rgba(90,79,207,.55)" stroke="#5A4FCF"/><text x="291" y="128" fill="#fff">ELBO</text>
+    <rect x="255" y="40" width="72" height="18" fill="rgba(193,58,87,.30)" stroke="#C13A57"/><text x="291" y="30" fill="#C13A57">KL↓</text>
+    <text x="291" y="204" fill="#26252E">good q</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">Total is fixed at log p(x); raising the ELBO squeezes the KL gap toward zero</div>
+</div>
+<figcaption><strong>Figure 2 — The ELBO and the gap.</strong> A second view of $\log p(x)=\text{ELBO}+\mathrm{KL}$: the total height is fixed (the evidence), so as you optimize $q$ the ELBO bar grows and the KL gap shrinks. A perfect $q$ closes the gap entirely (ELBO $=\log p(x)$); a poor $q$ leaves a large KL — exactly the identity the interactive above lets you feel.</figcaption>
+</figure>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+VI is just optimization: each ELBO step is a cheap reparameterized-gradient update — $O(\text{params})$ over a few Monte-Carlo samples — and <strong>amortized</strong> inference (an encoder net predicting $q_\phi(z\mid x)$) yields a posterior approximation for a new $x$ in one $O(1)$ forward pass. That's the speed win over MCMC's many correlated samples per posterior; the price is VI's bias and over-confidence.</div>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>

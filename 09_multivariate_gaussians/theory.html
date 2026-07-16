@@ -100,6 +100,9 @@
 <aside class="side"><span class="lbl">Why it's everywhere</span>The Gaussian is the max-entropy distribution for a fixed mean &amp; covariance, the CLT limit of averages, and closed under linear maps, marginalization, and conditioning. That closure is why it's the workhorse of ML.</aside>
 
 <!-- 2 -->
+<div class="callout c-anchor"><span class="tag">Analogy</span>
+A multivariate Gaussian is a <strong>hill of probability shaped like a stretched, tilted mound</strong>. The mean is the summit; the covariance sets which way the mound leans and how far it spreads along each direction. "How likely is this point?" is just "how far down the slope is it?" — measured not in plain distance but in <em>Mahalanobis</em> distance, which stretches the ruler along low-variance directions and relaxes it along high-variance ones.</div>
+
 <h2 id="s2"><span class="num">Section 2</span>Its contours are $\Sigma$'s ellipses</h2>
 <p>Level sets $p(x)=\text{const}$ are exactly the level sets of the quadratic form $d_M^2=\text{const}$ — the <strong>covariance ellipses</strong>. From Session 02, if $\Sigma=Q\Lambda Q^\top$ then:</p>
 <ul>
@@ -198,6 +201,30 @@ The Gaussian's exponent is Session 02's Mahalanobis form; its sampling is Sessio
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 460 240" role="img" aria-label="conditioning a 2D Gaussian on x2 gives a 1D Gaussian slice">
+  <g font-family="JetBrains Mono, monospace" font-size="12">
+    <!-- tilted covariance ellipses -->
+    <g fill="none" stroke="#5A4FCF" stroke-width="1.6" transform="translate(170,120) rotate(-28)">
+      <ellipse rx="30" ry="16"/><ellipse rx="60" ry="32"/><ellipse rx="90" ry="48"/></g>
+    <!-- conditioning slice at x2 = c -->
+    <line x1="250" y1="20" x2="250" y2="220" stroke="#B07514" stroke-width="2" stroke-dasharray="5 4"/>
+    <text x="256" y="34" fill="#B07514">x₂ = c</text>
+    <!-- the conditional 1D bump along that slice (drawn to the right) -->
+    <path d="M330,210 C355,210 355,70 380,70 C405,70 405,210 430,210" fill="rgba(14,140,128,.12)" stroke="#0E8C80" stroke-width="2.5"/>
+    <text x="352" y="60" fill="#0E8C80">p(x₁ | x₂=c)</text>
+    <line x1="250" y1="120" x2="330" y2="150" stroke="#9C99A6" stroke-width="1.2" stroke-dasharray="3 3"/>
+    <text x="60" y="215" fill="#5A4FCF">joint p(x₁,x₂)</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">Slice a Gaussian and you get a Gaussian — narrower, and shifted along the correlation</div>
+</div>
+<figcaption><strong>Figure 2 — Conditioning is a Gaussian slice.</strong> A second view of the marginal/conditional rules: fix $x_2=c$ (the dashed cut through the tilted joint ellipses) and the profile of the joint along that line is itself a Gaussian — the conditional $p(x_1\mid x_2)$. Its mean shifts linearly with $c$ and its width is <em>smaller</em> than the marginal, because knowing $x_2$ removes shared uncertainty.</figcaption>
+</figure>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+The density needs the precision $\Sigma^{-1}$ and $\det\Sigma$: an $O(d^3)$ factorization (Cholesky, Session 04) done <em>once</em>, then $O(d^2)$ per evaluation; storing $\Sigma$ is $O(d^2)$. In high dimensions a full covariance is expensive and often ill-conditioned, so ML uses <strong>diagonal</strong> ($O(d)$), <strong>low-rank + diagonal</strong>, or <strong>sparse-precision</strong> Gaussians — the same trick as diagonal curvature in Session 08.</div>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>

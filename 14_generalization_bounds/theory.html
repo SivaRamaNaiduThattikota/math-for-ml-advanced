@@ -191,6 +191,31 @@ Two data-independent levers still dominate in practice: <strong>more data</stron
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 460 210" role="img" aria-label="large-margin separating hyperplane between two classes">
+  <g font-family="JetBrains Mono, monospace" font-size="11">
+    <!-- decision boundary + margins -->
+    <line x1="60" y1="185" x2="380" y2="35" stroke="#26252E" stroke-width="2"/>
+    <line x1="60" y1="150" x2="380" y2="0" stroke="#5A4FCF" stroke-width="1.4" stroke-dasharray="5 4"/>
+    <line x1="60" y1="220" x2="380" y2="70" stroke="#5A4FCF" stroke-width="1.4" stroke-dasharray="5 4"/>
+    <!-- class + (teal, upper-left) -->
+    <g fill="#0E8C80"><circle cx="90" cy="55" r="5"/><circle cx="130" cy="40" r="5"/><circle cx="70" cy="95" r="5"/><circle cx="150" cy="80" r="5"/><circle cx="110" cy="110" r="5"/></g>
+    <!-- class - (rose, lower-right) -->
+    <g fill="#C13A57"><circle cx="300" cy="150" r="5"/><circle cx="340" cy="130" r="5"/><circle cx="270" cy="185" r="5"/><circle cx="360" cy="175" r="5"/><circle cx="320" cy="200" r="5"/></g>
+    <!-- margin arrow -->
+    <line x1="205" y1="118" x2="245" y2="78" stroke="#B07514" stroke-width="2"/>
+    <text x="250" y="110" fill="#B07514">margin</text>
+    <text x="300" y="30" fill="#5A4FCF">large margin → small ‖w‖ → low R̂</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">A wider margin needs a smaller weight norm — and Rademacher complexity ≤ B·R/√n</div>
+</div>
+<figcaption><strong>Figure 2 — Margins control complexity.</strong> A second view of the norm-based bound: separating the classes with a <em>wide</em> margin requires a small weight norm $B$, and since $\hat{\mathcal R}_S\le BR/\sqrt n$ (dimension-free), a large margin directly means low complexity and a tight generalization gap. This is the whole generalization argument for SVMs — and, via weight norms, part of the story for deep nets.</figcaption>
+</figure>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+Empirical Rademacher complexity is an expectation over random $\pm1$ labels, each needing the class's best fit to that noise — for a general model that means <em>retraining per draw</em> × several Monte-Carlo draws: expensive. For linear/kernel classes it collapses to a cheap norm, $(B/n)\,\mathbb E\lVert\sum_i\sigma_i x_i\rVert$. In practice you don't compute it — you <strong>control</strong> it, by shrinking weight norms (weight decay) and widening margins.</div>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>
