@@ -298,6 +298,9 @@ wb, V = np.linalg.eig(B)
 <hr class="divider">
 
 <!-- ════════════ RULES / TRAPS ════════════ -->
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+A full symmetric eigendecomposition (<code>eigh</code>) costs $O(n^3)$ time and $O(n^2)$ memory for a dense $n\times n$ matrix — fine for hundreds or a few thousand, prohibitive for millions. When you only need the <em>top</em> eigenvector (PCA's first component, PageRank), <strong>power iteration</strong> is just $O(n^2)$ per step (one matrix–vector product) with $O(n)$ extra memory, and iterative methods (Lanczos/ARPACK) exploit sparsity and low rank to go far cheaper. This cost is exactly why large-scale ML approximates spectra rather than computing them exactly.</div>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 
 <h3>Edge cases &amp; gotchas</h3>

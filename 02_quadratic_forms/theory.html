@@ -242,6 +242,28 @@ To ask "is this matrix PD?", wrap <code>np.linalg.cholesky</code> in a <code>try
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<div class="dgrid" style="grid-template-columns:1fr 1fr 1fr; gap:14px">
+  <div><div class="dcap">PD — bowl (all λ&gt;0)</div>
+    <svg viewBox="0 0 120 96" role="img" aria-label="concentric ellipse contours of a bowl"><g fill="none" stroke="#5A4FCF" stroke-width="1.7">
+      <ellipse cx="60" cy="48" rx="12" ry="9"/><ellipse cx="60" cy="48" rx="26" ry="19"/><ellipse cx="60" cy="48" rx="40" ry="30"/></g>
+      <circle cx="60" cy="48" r="2.6" fill="#26252E"/></svg></div>
+  <div><div class="dcap">Indefinite — saddle</div>
+    <svg viewBox="0 0 120 96" role="img" aria-label="hyperbolic saddle contours"><g fill="none" stroke="#C13A57" stroke-width="1.7">
+      <path d="M10,18 Q60,48 110,18"/><path d="M10,78 Q60,48 110,78"/><path d="M22,8 Q52,48 22,88"/><path d="M98,8 Q68,48 98,88"/></g>
+      <circle cx="60" cy="48" r="2.6" fill="#26252E"/></svg></div>
+  <div><div class="dcap">PSD — valley (a λ=0)</div>
+    <svg viewBox="0 0 120 96" role="img" aria-label="parallel-line contours of a flat valley"><g fill="none" stroke="#0E8C80" stroke-width="1.7">
+      <path d="M28,12 L46,84"/><path d="M52,12 L70,84"/><path d="M76,12 L94,84"/></g></svg></div>
+</div>
+<div class="dcap" style="margin-top:10px">The sign pattern of the eigenvalues <em>is</em> the shape of the level curves</div>
+</div>
+<figcaption><strong>Figure 2 — Definiteness as a contour signature.</strong> A second way to read $A$, complementary to the heatmap above: nested closed ellipses ⇒ positive definite (a bowl with a unique minimum); crossing hyperbola-like curves ⇒ indefinite (a saddle); parallel lines ⇒ a zero eigenvalue (a flat-bottomed valley). One glance at the contours tells you the definiteness.</figcaption>
+</figure>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+Evaluating the form $\mathbf x^\top A\mathbf x$ is one matrix–vector product plus a dot product — $O(n^2)$ time, $O(n^2)$ to store $A$. Testing definiteness by <strong>Cholesky</strong> is $\approx\tfrac13 n^3$ (about half of LU, the cheapest test); by eigenvalues it's a full $O(n^3)$. Because a dense Hessian is $O(n^2)$ to even store, large models keep only a <em>diagonal</em> or low-rank curvature approximation (the seed of Adam, Session 08).</div>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>

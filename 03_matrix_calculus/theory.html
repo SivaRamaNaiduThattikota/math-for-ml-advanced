@@ -108,6 +108,9 @@
 <p>The single rule that keeps you sane: <strong>track shapes like units.</strong> If a formula claims to be a gradient, it must have $\mathbf{x}$'s shape; if a chain-rule product doesn't have conformable dimensions, it's wrong before you even evaluate it.</p>
 
 <!-- 2 -->
+<div class="callout c-anchor"><span class="tag">Analogy</span>
+Matrix calculus is <strong>dimensional analysis for derivatives</strong>. A physicist won't trust an equation whose two sides have different units; you shouldn't trust a gradient whose shape differs from the thing you differentiated with respect to, or a chain-rule product whose inner dimensions don't line up. Track shapes like units and the formula is almost always right; ignore them and it's wrong before you plug in a single number.</div>
+
 <h2 id="s2"><span class="num">Section 2</span>The gradient cookbook</h2>
 <p>Three identities cover the vast majority of ML gradients. Learn them cold.</p>
 
@@ -217,6 +220,35 @@ PyTorch/JAX automate exactly this: they store each op's local Jacobian and multi
 <hr class="divider">
 
 <!-- RULES -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 640 150" role="img" aria-label="chain rule as a forward activation pass and a backward Jacobian pass">
+  <defs>
+    <marker id="mc03f" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#0E8C80"/></marker>
+    <marker id="mc03b" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#C13A57"/></marker>
+  </defs>
+  <g font-family="JetBrains Mono, monospace" font-size="13" fill="#26252E" text-anchor="middle">
+    <rect x="24" y="58" width="86" height="44" rx="9" fill="none" stroke="#C9C4B6"/><text x="67" y="84">x</text>
+    <rect x="190" y="58" width="86" height="44" rx="9" fill="none" stroke="#C9C4B6"/><text x="233" y="84">g(x)</text>
+    <rect x="356" y="58" width="96" height="44" rx="9" fill="none" stroke="#C9C4B6"/><text x="404" y="84">f(g(x))</text>
+    <rect x="532" y="58" width="82" height="44" rx="9" fill="none" stroke="#C9C4B6"/><text x="573" y="84">loss</text>
+    <line x1="112" y1="72" x2="188" y2="72" stroke="#0E8C80" stroke-width="2" marker-end="url(#mc03f)"/>
+    <line x1="278" y1="72" x2="354" y2="72" stroke="#0E8C80" stroke-width="2" marker-end="url(#mc03f)"/>
+    <line x1="454" y1="72" x2="530" y2="72" stroke="#0E8C80" stroke-width="2" marker-end="url(#mc03f)"/>
+    <line x1="530" y1="92" x2="454" y2="92" stroke="#C13A57" stroke-width="2" marker-end="url(#mc03b)"/>
+    <line x1="354" y1="92" x2="278" y2="92" stroke="#C13A57" stroke-width="2" marker-end="url(#mc03b)"/>
+    <line x1="188" y1="92" x2="112" y2="92" stroke="#C13A57" stroke-width="2" marker-end="url(#mc03b)"/>
+    <text x="320" y="34" fill="#0E8C80" font-size="11">forward — activations</text>
+    <text x="320" y="128" fill="#C13A57" font-size="11">backward — multiply local Jacobians (Jᵀv)</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">Backprop = the chain rule evaluated right-to-left, reusing each layer's local Jacobian</div>
+</div>
+<figcaption><strong>Figure 2 — The chain rule as a two-pass relay.</strong> A second view of $J_{f\circ g}=J_f J_g$: forward (teal) each layer produces its output; backward (rose) the scalar loss's gradient is handed down the chain, each step multiplying by that layer's Jacobian. One backward sweep yields every parameter's gradient.</figcaption>
+</figure>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+The chain rule runs left-to-right (<strong>forward mode</strong>) or right-to-left (<strong>reverse mode / backprop</strong>). For a scalar loss with many parameters, reverse mode gets <em>all</em> gradients in a single backward pass — one pass total, versus one pass <em>per input dimension</em> for forward mode. The price is memory: you must cache the forward activations for the backward pass ($O(\text{network size}\times\text{batch})$), which is why training memory grows with depth and batch size (and why gradient checkpointing exists).</div>
+
 <h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
 <h3>Edge cases &amp; gotchas</h3>
 <ul>
