@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>The Math of Attention & Transformers · Math for ML · Advanced</title>
+<meta name="description" content="Scaled dot-product attention as a differentiable soft dictionary lookup: why divide by sqrt(d), multi-head attention, masking, and the O(n^2) cost behind transformers.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="The Math of Attention & Transformers · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="17_attention_math">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · The attention operation</a>
+  <a href="#s2">2 · Why ÷√d</a>
+  <a href="#s3">3 · Multi-head</a>
+  <a href="#s4">4 · Masking & position</a>
+  <a href="#s5">5 · Cost & the transformer</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Generative &amp; Deep Models · 17</div>
+    <h1>The Math of Attention &amp; Transformers</h1>
+    <p class="lede">Strip away the mystique and attention is one line: a softmax over scaled dot products, times a matrix of values. It's a differentiable, soft dictionary lookup — and it assembles from the dot products, softmax, and matrix calculus you already have.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: dot product, softmax, matrix calculus</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Attention is the operation that ended the RNN era and powers every large language model — yet mathematically it's assembled entirely from pieces you've already met: dot products (similarity, Session foundational-02), softmax (Session 18/10), and matrix multiplication. This session writes the whole thing as one formula, explains the two design choices that make it work in practice (the $\sqrt d$ scaling and masking), and locates its notorious cost. By the end, &ldquo;self-attention&rdquo; should read as a soft, learnable lookup — nothing more, nothing magic.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Write scaled dot-product attention and read it as a soft, weighted value-lookup.</li>
+    <li>Explain <em>why</em> the scores are divided by $\sqrt d$ (variance control &amp; softmax saturation).</li>
+    <li>Describe multi-head attention and what each head buys.</li>
+    <li>Apply causal vs bidirectional <strong>masking</strong> and explain why positions must be added separately.</li>
+    <li>State attention's $O(n^2 d)$ cost and why it's the long-context bottleneck.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Vaswani et al. 2017, <em>Attention Is All You Need</em>; Phuong &amp; Hutter 2022, <em>Formal Algorithms for Transformers</em>; Dao et al. 2022 (FlashAttention). Softmax cross-entropy convexity from Session 05.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">The attention operation</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">Why divide by $\sqrt d$</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">Multi-head attention</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Masking &amp; positional encoding</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Cost &amp; the transformer block</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$Q,K,V$</span><span class="def">Queries, keys, values — each a matrix of $n$ rows (tokens) × $d$ features.</span>
+    <span class="sym">$d$</span><span class="def">Head dimension (length of each query/key vector).</span>
+    <span class="sym">$n$</span><span class="def">Sequence length (number of tokens).</span>
+    <span class="sym">$\mathrm{softmax}$</span><span class="def">Row-wise normalization to a probability distribution over keys.</span>
+    <span class="sym">mask</span><span class="def">$-\infty$ added to forbidden scores (e.g. future positions) before softmax.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>The attention operation, in one line</h2>
+<p>Each token emits a <strong>query</strong> (what it's looking for), a <strong>key</strong> (what it offers), and a <strong>value</strong> (what it passes on). A query scores every key by dot product, those scores become weights via softmax, and the output is the weighted average of the values:</p>
+<div class="mathband">$$ \mathrm{Attention}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt d}\right) V. $$</div>
+<p>Read it right-to-left in three steps: (1) $QK^\top$ — every query · every key = an $n\times n$ table of similarities; (2) $\mathrm{softmax}$ each row — turn similarities into weights that sum to 1; (3) multiply by $V$ — each output row is a <strong>weighted blend of value vectors</strong>, weighted by how well its query matched each key. That's it — a soft, content-based lookup.</p>
+
+<div class="callout c-anchor"><span class="tag">Analogy</span>
+Attention is a <strong>soft dictionary lookup</strong>. A normal dictionary needs an exact key and returns one value. Attention compares your query to <em>every</em> key by similarity, turns those similarities into weights, and returns a <em>blend</em> of all the values — mostly the best-matching one, a little of the others. It's a fuzzy, differentiable key–value store, which is exactly why it can be trained by gradient descent.</div>
+
+<div class="callout c-good"><span class="tag">Verified</span>
+A from-scratch implementation confirms the mechanics: every row of the softmax weights sums to $1$, and the output has shape $n\times d$ — each row a convex combination of the $n$ value rows (E1). No loops, no recurrence: all pairwise interactions in two matrix multiplies.</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="attnplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">attention weights (softmax of scaled scores)</span>
+      <button class="ctrl" id="maskBtn">causal mask: off</button>
+    </div>
+    <div class="slider-row"><span>temperature (scaling)</span><input type="range" id="sTemp" min="0.15" max="4" step="0.05" value="1"></div>
+    <div class="readout">
+      <span><span class="k">rows sum to</span> = <span class="va" id="rSum">1.00</span></span>
+      <span><span class="k">behaviour</span> = <span class="vd" id="rBeh">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — The attention weight matrix.</strong> Each cell $(i,j)$ is how much token $i$ attends to token $j$ (darker = more); every <em>row</em> sums to 1. Lower the temperature (a larger effective scaling) and each row sharpens toward a <strong>hard lookup</strong> (one dominant key); raise it and attention flattens toward a plain <strong>average</strong>. Toggle the causal mask and the upper triangle vanishes — each token can only attend to itself and the past (how GPT works).</figcaption>
+</figure>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>Why divide by $\sqrt d$</h2>
+<p>The scaling isn't cosmetic. A dot product of two $d$-dimensional vectors with unit-variance entries has variance $\approx d$, so the raw scores $QK^\top$ have standard deviation $\approx\sqrt d$. Feed scores that large into softmax and it <strong>saturates</strong> — one entry rounds to 1, the rest to 0 — which kills the gradient (a saturated softmax has near-zero slope, Session 10's Fisher/curvature story). Dividing by $\sqrt d$ rescales the scores back to variance $\approx1$, keeping softmax in its responsive, trainable regime.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Raw dot-product std tracks $\sqrt d$ — $2.76$ at $d{=}8$, $7.96$ at $d{=}64$, $22.4$ at $d{=}512$ — and dividing by $\sqrt d$ pulls it to $\approx1.0$ every time (E2). And an unscaled large-logit softmax collapses: $\mathrm{softmax}([2,1,0])=[.67,.25,.09]$ but $\mathrm{softmax}(8\cdot[2,1,0])=[1,0,0]$ (E3) — saturated, no gradient.</div>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>Multi-head attention</h2>
+<p>One attention operation captures one kind of relationship. <strong>Multi-head</strong> attention runs $h$ of them in parallel, each with its own learned projections of $Q,K,V$ into a smaller subspace, then concatenates the results:</p>
+<div class="mathband">$$ \mathrm{MHA} = \big[\,\mathrm{head}_1;\dots;\mathrm{head}_h\,\big]\,W^O, \qquad \mathrm{head}_i=\mathrm{Attention}(QW_i^Q, KW_i^K, VW_i^V). $$</div>
+<p>Different heads learn to attend to different things — one to the previous token, one to the subject of the sentence, one to matching brackets. It's an ensemble of soft lookups, each looking at the sequence through a different lens, fused by the output projection $W^O$. The total cost is roughly the same as single-head with full dimension, since each head works in $d/h$ dimensions.</p>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Masking &amp; positional encoding</h2>
+<p>Two structural facts about the raw operation need fixing.</p>
+<p><strong>Masking.</strong> Attention as written lets every token see every other. For autoregressive generation (predict the next token) a token must not peek at the future, so we add $-\infty$ to the scores of future positions before softmax — they get weight 0. That <strong>causal mask</strong> makes a GPT; no mask makes a bidirectional encoder (BERT).</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+With a causal mask, the attention rows are lower-triangular: position 1 attends only to itself ($[1,0,0]$), position 2 to the first two ($[0.71,0.29,0]$), position 3 to all past ($[0.16,0.17,0.67]$) (E4) — the future is invisible.</div>
+<p><strong>Position.</strong> Attention is a set operation — permute the tokens and the outputs just permute; it has <em>no</em> sense of order. So order must be injected separately, via <strong>positional encodings</strong> (sinusoidal, learned, or rotary/RoPE) added to or mixed into the token representations. Without them &ldquo;dog bites man&rdquo; and &ldquo;man bites dog&rdquo; are identical to the model.</p>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Cost &amp; the transformer block</h2>
+<p>The $n\times n$ score matrix is attention's power <em>and</em> its curse. Computing $QK^\top$ and applying it to $V$ is $O(n^2 d)$ time and — crucially — $O(n^2)$ <strong>memory</strong> for the weights. That quadratic-in-sequence-length scaling is why long context is expensive and why a whole industry of fixes exists: <strong>FlashAttention</strong> (same math, never materializes the full $n\times n$ matrix — an IO-aware rewrite), and <strong>linear/sparse attention</strong> (approximate the softmax to get $O(n)$).</p>
+<p>A full <strong>transformer block</strong> wraps attention with the rest of Pillars I–IV: multi-head attention, then a position-wise feed-forward network, each with a residual connection and layer normalization. Stack these, add positional encodings, and you have the architecture behind modern AI — attention doing the mixing across tokens, the feed-forward doing the per-token computation.</p>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+<span class="k">def</span> <span class="f">softmax</span>(z, axis=-<span class="n">1</span>):
+    z = z - z.max(axis, keepdims=<span class="k">True</span>); e = np.exp(z)
+    <span class="k">return</span> e / e.sum(axis, keepdims=<span class="k">True</span>)
+
+<span class="k">def</span> <span class="f">attention</span>(Q, K, V, mask=<span class="k">None</span>):
+    d = Q.shape[-<span class="n">1</span>]
+    scores = Q @ K.T / np.sqrt(d)               <span class="c"># n x n similarities, scaled</span>
+    <span class="k">if</span> mask <span class="k">is</span> <span class="k">not</span> <span class="k">None</span>: scores = np.where(mask, -np.inf, scores)
+    A = softmax(scores)                          <span class="c"># rows sum to 1</span>
+    <span class="k">return</span> A @ V, A                             <span class="c"># weighted blend of values</span>
+
+rng = np.random.default_rng(<span class="n">0</span>); n, d = <span class="n">4</span>, <span class="n">8</span>
+Q,K,V = (rng.standard_normal((n,d)) <span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">3</span>))
+out, A = attention(Q, K, V)
+<span class="f">print</span>(A.sum(<span class="n">1</span>))                              <span class="c"># [1. 1. 1. 1.]</span>
+
+<span class="c"># causal mask: add -inf to future positions before softmax</span>
+mask = np.triu(np.ones((<span class="n">3</span>,<span class="n">3</span>)), <span class="n">1</span>).astype(<span class="k">bool</span>)
+X = rng.standard_normal((<span class="n">3</span>,<span class="n">8</span>))
+_, Ac = attention(X, X, X, mask)             <span class="c"># self-attention, masked</span>
+<span class="f">print</span>(np.round(Ac, <span class="n">2</span>))                     <span class="c"># lower-triangular weights</span></pre>
+<div class="out">[1. 1. 1. 1.]     # attention weights are proper distributions
+# causal rows: [1,0,0], [0.71,0.29,0], [0.16,0.17,0.67]</div>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+Attention is $O(n^2 d)$ time and $O(n^2)$ <strong>memory</strong> — quadratic in sequence length $n$. That's why doubling context roughly quadruples the attention cost, and why long-context models rely on <strong>FlashAttention</strong> (an IO-aware exact algorithm that never stores the full $n\times n$ matrix) or <strong>linear/sparse attention</strong> (approximate softmax for $O(n)$). Multi-head doesn't add cost — each head runs in $d/h$ dimensions.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">Why are attention scores divided by $\sqrt d$?</div>
+  <button class="opt">To make them integers.</button>
+  <button class="opt">To keep the score variance ≈1 so softmax doesn't saturate and lose gradient.</button>
+  <button class="opt">To make attention symmetric.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">A causal mask is used to…</div>
+  <button class="opt">make attention bidirectional like BERT.</button>
+  <button class="opt">stop each token from attending to future positions (autoregressive generation).</button>
+  <button class="opt">reduce the $O(n^2)$ cost to $O(n)$.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Attention is permutation-equivariant:</strong> no positional encoding ⇒ the model can't tell word order. Always inject position.</li>
+  <li><strong>Softmax saturation:</strong> without $\sqrt d$ scaling (or with extreme logits), gradients vanish — attention stops learning.</li>
+  <li><strong>Mask before softmax, with $-\infty$</strong> (not 0 after) — masking after softmax breaks the normalization.</li>
+  <li><strong>Numerical stability:</strong> subtract the row max before exponentiating (the code does) or large scores overflow.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Forgetting positional information</span>Raw attention is order-blind; &ldquo;dog bites man&rdquo; = &ldquo;man bites dog&rdquo; without positional encodings. This is a classic source of silently broken sequence models.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Dropping the $\sqrt d$ scale</span>Unscaled scores grow with dimension and saturate softmax; training stalls with near-zero attention gradients. Never remove the scaling.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Assuming attention is cheap</span>The $O(n^2)$ memory is the real limit on context length. Naïvely quadrupling the context can OOM; use FlashAttention or a sub-quadratic variant.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>Attention $=\mathrm{softmax}(QK^\top/\sqrt d)\,V$ — a <strong>soft, weighted value lookup</strong>; rows sum to 1.</li>
+  <li>Divide by <strong>$\sqrt d$</strong> to keep score variance ≈1 and softmax un-saturated.</li>
+  <li><strong>Multi-head</strong> = parallel attentions in subspaces, capturing different relations.</li>
+  <li><strong>Mask</strong> (add $-\infty$) for causal generation; add <strong>positional</strong> info since attention is order-blind.</li>
+  <li>Cost is <strong>$O(n^2 d)$ time, $O(n^2)$ memory</strong> — the long-context bottleneck (FlashAttention / linear attention).</li>
+  <li>A transformer block = multi-head attention + feed-forward + residual + layer norm.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- SECOND VIEW -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 470 220" role="img" aria-label="attention as a soft key-value lookup">
+  <defs><marker id="atv" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5A4FCF"/></marker></defs>
+  <g font-family="JetBrains Mono, monospace" font-size="11" text-anchor="middle">
+    <rect x="18" y="95" width="70" height="34" rx="8" fill="none" stroke="#5A4FCF"/><text x="53" y="117" fill="#5A4FCF">query q</text>
+    <!-- keys -->
+    <g stroke="#C9C4B6" fill="none"><rect x="150" y="20" width="60" height="26" rx="6"/><rect x="150" y="62" width="60" height="26" rx="6"/><rect x="150" y="104" width="60" height="26" rx="6"/></g>
+    <g fill="#26252E"><text x="180" y="38">k₁</text><text x="180" y="80">k₂</text><text x="180" y="122">k₃</text></g>
+    <!-- similarities -> weights -->
+    <g stroke="#0E8C80" stroke-width="1.6"><line x1="88" y1="108" x2="148" y2="34" marker-end="url(#atv)"/><line x1="88" y1="110" x2="148" y2="76" marker-end="url(#atv)"/><line x1="88" y1="112" x2="148" y2="118" marker-end="url(#atv)"/></g>
+    <text x="118" y="150" fill="#0E8C80" font-size="9">q·kᵢ → softmax</text>
+    <!-- values with weights -->
+    <g fill="#26252E"><text x="270" y="38">w₁·v₁</text><text x="270" y="80">w₂·v₂</text><text x="270" y="122">w₃·v₃</text></g>
+    <g stroke="#5A4FCF" stroke-width="1.4"><line x1="212" y1="33" x2="242" y2="33"/><line x1="212" y1="75" x2="242" y2="75"/><line x1="212" y1="117" x2="242" y2="117"/></g>
+    <!-- sum to output -->
+    <rect x="360" y="62" width="90" height="34" rx="8" fill="rgba(90,79,207,.12)" stroke="#5A4FCF"/><text x="405" y="84" fill="#5A4FCF">output</text>
+    <g stroke="#5A4FCF" stroke-width="1.6"><line x1="315" y1="33" x2="358" y2="72" marker-end="url(#atv)"/><line x1="315" y1="75" x2="358" y2="78" marker-end="url(#atv)"/><line x1="315" y1="117" x2="358" y2="84" marker-end="url(#atv)"/></g>
+    <text x="235" y="205" fill="#6E6C7A" font-size="10">output = Σ softmax(q·kᵢ) · vᵢ</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">A query blends the values, weighted by how well each key matches it</div>
+</div>
+<figcaption><strong>Figure 2 — Attention as a soft lookup.</strong> A second view of the formula: the query is compared to every key (teal), the similarities become softmax weights, and the output is the weighted sum of the values (indigo). A hard dictionary returns one value; attention returns a blend.</figcaption>
+</figure>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Implement the pieces and see the design choices bite.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-m">medium</span><p>Implement scaled dot-product attention and confirm the weight rows sum to 1 and the output is a convex blend of $V$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">def</span> <span class="f">attention</span>(Q,K,V):
+    d=Q.shape[-<span class="n">1</span>]; A=softmax(Q@K.T/np.sqrt(d)); <span class="k">return</span> A@V, A
+_,A=attention(*[rng.standard_normal((<span class="n">4</span>,<span class="n">8</span>)) <span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">3</span>)])
+A.sum(<span class="n">1</span>)   <span class="c"># [1 1 1 1]  -> each output row is a weighted average of value rows</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-m">medium</span><p>Empirically show the std of raw dot products grows like $\sqrt d$ and that dividing by $\sqrt d$ normalizes it.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">for</span> d <span class="k">in</span> (<span class="n">8</span>,<span class="n">64</span>,<span class="n">512</span>):
+    q=rng.standard_normal((<span class="n">2000</span>,d)); k=rng.standard_normal((<span class="n">2000</span>,d))
+    dots=np.sum(q*k,<span class="n">1</span>); <span class="f">print</span>(d, dots.std(), (dots/np.sqrt(d)).std())
+<span class="c"># std ~ sqrt(d) (2.8, 8, 22.6); after scaling ~ 1.0 each</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-e">easy</span><p>Show that scaling logits up by 8× saturates softmax to a near one-hot vector.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">softmax(np.array([<span class="n">2.</span>,<span class="n">1.</span>,<span class="n">0.</span>]))     <span class="c"># [.67 .25 .09]</span>
+softmax(<span class="n">8</span>*np.array([<span class="n">2.</span>,<span class="n">1.</span>,<span class="n">0.</span>]))   <span class="c"># [1 0 0]  saturated, ~zero gradient</span></pre>
+    <p>Large logits push softmax to the vertex of the simplex where its Jacobian ($\mathrm{diag}(p)-pp^\top$, Session 05) is nearly zero — no gradient to learn from. The $\sqrt d$ scale prevents exactly this.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Build a causal mask and confirm each position attends only to itself and earlier positions.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">s=rng.standard_normal((<span class="n">3</span>,<span class="n">3</span>)); mask=np.triu(np.ones((<span class="n">3</span>,<span class="n">3</span>)),<span class="n">1</span>).astype(<span class="k">bool</span>)
+softmax(np.where(mask,-np.inf,s))   <span class="c"># lower-triangular: [1,0,0],[.71,.29,0],[.16,.17,.67]</span></pre>
+    <p>Adding $-\infty$ to future positions before softmax gives them weight 0, so the output at each position depends only on the past — the definition of an autoregressive model.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Show attention is permutation-equivariant (no position sense): permuting the input rows just permutes the output rows.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">X=rng.standard_normal((<span class="n">4</span>,<span class="n">8</span>)); P=np.eye(<span class="n">4</span>)[[<span class="n">2</span>,<span class="n">0</span>,<span class="n">3</span>,<span class="n">1</span>]]   <span class="c"># a permutation</span>
+o1,_=attention(X,X,X); o2,_=attention(P@X,P@X,P@X)
+np.allclose(P@o1, o2)   <span class="c"># True -> output permutes with the input</span></pre>
+    <p>Reordering tokens simply reorders the outputs — attention has no built-in notion of position, which is why positional encodings must be added. &ldquo;dog bites man&rdquo; and &ldquo;man bites dog&rdquo; are indistinguishable without them.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Every LLM:</strong> stacked self-attention + feed-forward blocks are the transformer — GPT, BERT, Llama, Claude.</li>
+  <li><strong>Cross-attention:</strong> queries from one sequence, keys/values from another — translation, retrieval-augmented generation, image captioning.</li>
+  <li><strong>Vision &amp; multimodal:</strong> ViT, CLIP — patches or modalities as tokens.</li>
+  <li><strong>Efficiency research:</strong> FlashAttention, linear/sparse attention, and long-context tricks all target the $O(n^2)$ cost.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · Write scaled dot-product attention and explain each part.</div><div class="a">$\mathrm{softmax}(QK^\top/\sqrt d)V$: $QK^\top$ scores each query against each key; softmax turns scores into weights summing to 1; multiplying by $V$ returns a weighted blend of values — a soft lookup.</div></div>
+<div class="qa"><div class="q">Q2 · Why the $\sqrt d$ scaling?</div><div class="a">Dot products of $d$-dim vectors have std $\approx\sqrt d$; unscaled, softmax saturates and gradients vanish. Dividing by $\sqrt d$ keeps score variance ≈1 and softmax responsive.</div></div>
+<div class="qa"><div class="q">Q3 · What does multi-head attention add?</div><div class="a">Parallel attention in different learned subspaces, so different heads capture different relationships (syntax, coreference, position); results are concatenated and projected.</div></div>
+<div class="qa"><div class="q">Q4 · Causal vs bidirectional masking?</div><div class="a">Causal mask (add $-\infty$ to future scores) makes an autoregressive model (GPT); no mask lets every token see all others (BERT-style encoder).</div></div>
+<div class="qa"><div class="q">Q5 · What's attention's computational cost and how is it mitigated?</div><div class="a">$O(n^2 d)$ time and $O(n^2)$ memory in sequence length. FlashAttention avoids materializing the full matrix (exact, IO-aware); linear/sparse attention approximates softmax for $O(n)$.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Scaled dot-product attention</td><td>The core of every transformer</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>$\sqrt d$ scaling</td><td>Keeps softmax trainable</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Multi-head</td><td>Multiple relationship types at once</td><td class="freq f-h">High</td></tr>
+  <tr><td>Masking &amp; position</td><td>Causal generation; order awareness</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>$O(n^2)$ cost</td><td>The long-context bottleneck</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Transformer block</td><td>Attention + FFN + residual + norm</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Attention is a soft, differentiable dictionary lookup.</div>
+  <p><span class="cc-sub">Reusable idea:</span> the operation behind modern AI is one line built from dot products and softmax.</p>
+  <ul>
+    <li><strong>$\mathrm{softmax}(QK^\top/\sqrt d)\,V$</strong> — score every key by a query, normalize to weights, return a weighted blend of values.</li>
+    <li><strong>Divide by $\sqrt d$</strong> so scores stay variance-1 and softmax doesn't saturate (dead gradients).</li>
+    <li><strong>Multi-head</strong> = parallel lookups in subspaces; <strong>mask</strong> for causality; <strong>add position</strong> because attention is order-blind.</li>
+    <li><strong>Cost $O(n^2 d)$ / $O(n^2)$ memory</strong> — the quadratic bottleneck FlashAttention and linear attention exist to beat.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> there is no magic — attention replaces &ldquo;pass memory down a chain&rdquo; (RNNs) with &ldquo;every token looks at every token and blends what's relevant,&rdquo; a parallel, distance-free, differentiable lookup. Stack it with feed-forward, norm, and residuals and you have the transformer.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>18 · Variational Autoencoders →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">The ELBO of Session 12 meets a neural network: an encoder and decoder trained end-to-end with the reparameterization trick, learning a smooth latent space you can sample from. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

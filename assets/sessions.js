@@ -26,7 +26,7 @@ window.MFML_SESSIONS = [
   ["lt","14","14_generalization_bounds","Generalization bounds & Rademacher complexity","Provable guarantees on the gap between train and test error.",true],
   ["it","15","15_mutual_information","Mutual information & f-divergences","Measuring shared information and the distance between distributions.",true],
   ["it","16","16_optimal_transport","Optimal transport & the Wasserstein distance","Moving mass — the geometry-aware distance behind modern generative models.",true],
-  ["gen","17","17_attention_math","The math of attention & transformers","Scaled dot-product attention as a differentiable, kernel-like lookup.",false],
+  ["gen","17","17_attention_math","The math of attention & transformers","Scaled dot-product attention as a differentiable, kernel-like lookup.",true],
   ["gen","18","18_vae","Variational autoencoders","The reparameterization trick and the ELBO, put to work.",false],
   ["gen","19","19_diffusion","Diffusion models & score matching","Learning to reverse noise — SDEs, scores, and denoising.",false],
   ["gen","20","20_normalizing_flows","Normalizing flows & change of variables","Exact likelihoods by tracking how densities warp.",false],
