@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Eigendecomposition & the Spectral Theorem · Math for ML · Advanced</title>
+<meta name="description" content="The directions a matrix only scales, diagonalization, and why symmetric matrices — the ones ML actually uses — decompose into an orthogonal basis of real eigenvalues.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Eigendecomposition & the Spectral Theorem · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="01_eigendecomposition">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · The eigen-equation</a>
+  <a href="#s2">2 · Diagonalization</a>
+  <a href="#s3">3 · The Spectral Theorem</a>
+  <a href="#s4">4 · Why symmetric wins in ML</a>
+  <a href="#s5">5 · Powers & matrix functions</a>
+  <a href="#s6">6 · NumPy: eig vs eigh</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Linear Algebra · 01</div>
+    <h1>Eigendecomposition &amp; the Spectral Theorem</h1>
+    <p class="lede">Every matrix has a few directions it treats specially — it only stretches them, never turns them. Find those directions and the matrix stops being a grid of numbers and becomes a list of independent scalings.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy/SciPy-verified</span><span class="dot"></span><span>Prereq: matrices, basis, SVD intuition</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">You already met eigenvectors in the foundational track as "the directions a matrix only stretches." This session takes that from a picture to a <strong>tool</strong>: we'll turn the eigen-equation into a full <strong>decomposition</strong> $A = V\Lambda V^{-1}$, discover that one special class of matrices — the <strong>symmetric</strong> ones — decomposes far more cleanly, and see why almost every matrix an ML system actually cares about (covariances, kernels, Hessians, graph Laplacians) is exactly that class.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Read the eigen-equation $A\mathbf{v}=\lambda\mathbf{v}$ as "on this direction, the matrix is just a number."</li>
+    <li>Write a diagonalizable matrix as $A=V\Lambda V^{-1}$ and say precisely when that fails.</li>
+    <li>State and use the <strong>Spectral Theorem</strong>: every real symmetric matrix is $A=Q\Lambda Q^\top$ with real eigenvalues and orthonormal eigenvectors.</li>
+    <li>Explain why symmetric (and positive-semidefinite) matrices are the ones ML lives on, and connect eigenvalues to variance, curvature, and stability.</li>
+    <li>Compute powers and functions of a matrix through its spectrum, and choose <code>eig</code> vs <code>eigh</code> correctly in NumPy.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> This session maps to <em>Mathematics for Machine Learning</em> (Deisenroth, Faisal &amp; Ong) <span class="secs">§4.2 Eigenvalues &amp; Eigenvectors, §4.4 Eigendecomposition &amp; Diagonalization</span>, and Strang's <em>Linear Algebra &amp; Learning from Data</em> §I.6. We build the intuition and the ML payoff; read those for the formal proofs.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">The eigen-equation, revisited</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">Diagonalization $A=V\Lambda V^{-1}$</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">The Spectral Theorem</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Why symmetric wins in ML</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Powers &amp; matrix functions</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy: eig vs eigh</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$A$</span><span class="def">A square $n\times n$ matrix (a linear map from $\mathbb{R}^n$ to itself).</span>
+    <span class="sym">$\lambda_i$</span><span class="def">The $i$-th eigenvalue (a scalar). The set $\{\lambda_i\}$ is the <em>spectrum</em> of $A$.</span>
+    <span class="sym">$\mathbf{v}_i$</span><span class="def">An eigenvector — a nonzero direction with $A\mathbf{v}_i=\lambda_i\mathbf{v}_i$.</span>
+    <span class="sym">$\Lambda$</span><span class="def">Diagonal matrix of eigenvalues, $\Lambda=\mathrm{diag}(\lambda_1,\dots,\lambda_n)$.</span>
+    <span class="sym">$V$</span><span class="def">Matrix whose columns are eigenvectors (general case).</span>
+    <span class="sym">$Q$</span><span class="def">Matrix of <em>orthonormal</em> eigenvectors ($Q^\top Q=I$), reserved for the symmetric case.</span>
+    <span class="sym">$A\succeq 0$</span><span class="def">$A$ is positive semidefinite — symmetric with all eigenvalues $\ge 0$.</span>
+    <span class="sym">$\rho(A)$</span><span class="def">Spectral radius, $\max_i|\lambda_i|$.</span>
+  </div>
+</details>
+
+<!-- ════════════ 1 ════════════ -->
+<h2 id="s1"><span class="num">Section 1</span>The eigen-equation, revisited</h2>
+
+<p>A matrix $A$ takes a vector and generally does two things at once: it <strong>rotates</strong> it and <strong>rescales</strong> it. An <strong>eigenvector</strong> is a direction where the rotation part vanishes — the output points along the same line as the input:</p>
+
+<div class="mathband">$$ A\mathbf{v} = \lambda\mathbf{v}, \qquad \mathbf{v}\neq\mathbf{0}. $$</div>
+
+<p>The scalar $\lambda$ is how much that direction gets stretched ($|\lambda|>1$), squashed ($|\lambda|<1$), or flipped ($\lambda<0$). On its eigenvectors, the whole matrix collapses to <em>a single number</em>. That is the entire point: find enough of these directions and the matrix becomes trivial to reason about.</p>
+
+<aside class="side"><span class="lbl">From the foundational track</span>You solved $\det(A-\lambda I)=0$ for the eigenvalues by hand. Here we treat that as known and go after the <b>decomposition</b> it unlocks — and the special structure symmetric matrices carry.</aside>
+
+<p>Rearranging, $(A-\lambda I)\mathbf{v}=\mathbf{0}$ with $\mathbf{v}\ne\mathbf{0}$ forces $A-\lambda I$ to be singular, so eigenvalues are the roots of the <strong>characteristic polynomial</strong> $\det(A-\lambda I)=0$. Two facts fall straight out of that polynomial and are worth committing to memory, because they are the fastest sanity checks you have:</p>
+
+<div class="mathband">$$ \operatorname{tr}(A)=\sum_i \lambda_i \qquad\text{and}\qquad \det(A)=\prod_i \lambda_i. $$</div>
+
+<div class="callout c-good"><span class="tag">Verified</span>
+For $A=\begin{bmatrix}2&1\\1&2\end{bmatrix}$: eigenvalues are $1$ and $3$. Check: $\operatorname{tr}=4=1+3$, and $\det = 3 = 1\times 3$. NumPy confirms both (Section 6, E5).</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="eigplay" width="880" height="470"></canvas>
+    <div class="ctrlrow">
+      <span class="lbl2">symmetric A =</span>
+      <span>[ <span class="va" id="rA11">2.0</span> , <span class="vs" id="rA12">1.0</span> ; <span class="vs" id="rA12b">1.0</span> , <span class="vb" id="rA22">2.0</span> ]</span>
+    </div>
+    <div class="slider-row"><span>a₁₁</span><input type="range" id="sA11" min="-3" max="3" step="0.1" value="2"><span>a₂₂</span><input type="range" id="sA22" min="-3" max="3" step="0.1" value="2"><span>a₁₂</span><input type="range" id="sA12" min="-3" max="3" step="0.1" value="1"></div>
+    <div class="readout">
+      <span><span class="k">λ₁</span> = <span class="va" id="rL1">3.00</span></span>
+      <span><span class="k">λ₂</span> = <span class="vb" id="rL2">1.00</span></span>
+      <span><span class="k">eigvecs ⟂ ?</span> <span class="vd" id="rOrth">yes</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — A symmetric matrix maps the unit circle to an ellipse.</strong> The faint circle is the set of all unit vectors; the filled shape is where $A$ sends them. The two arrows are the eigenvectors, drawn at length $|\lambda_i|$ — they are exactly the <em>principal axes</em> of the ellipse. Drag the sliders: as long as $A$ stays symmetric, the two axes stay <strong>perpendicular</strong>. That perpendicularity is the Spectral Theorem, live.</figcaption>
+</figure>
+
+<!-- ════════════ 2 ════════════ -->
+<h2 id="s2"><span class="num">Section 2</span>Diagonalization: $A = V\Lambda V^{-1}$</h2>
+
+<p>One eigenvector tells you about one direction. The power move is to collect <em>all</em> of them. Suppose $A$ (size $n\times n$) has $n$ linearly independent eigenvectors $\mathbf{v}_1,\dots,\mathbf{v}_n$. Stack them as columns of $V$ and put the eigenvalues on the diagonal of $\Lambda$. Then $A\mathbf{v}_i=\lambda_i\mathbf{v}_i$ for every $i$ bundles into one matrix equation:</p>
+
+<div class="mathband">$$ AV = V\Lambda \quad\Longrightarrow\quad A = V\Lambda V^{-1}. $$</div>
+
+<p>Read $A=V\Lambda V^{-1}$ right-to-left as a <strong>change of language</strong>:</p>
+<ul>
+  <li>$V^{-1}$ rewrites your vector in the eigenvector coordinate system ("how much of each special direction do you have?");</li>
+  <li>$\Lambda$ scales each of those coordinates independently — the easy part;</li>
+  <li>$V$ translates back to the original coordinates.</li>
+</ul>
+<p>In the right basis, a scary matrix is <em>just</em> independent multiplications. This is the same "choose smarter axes" idea as PCA, now stated as an exact factorization.</p>
+
+<aside class="side"><span class="lbl">Thread forward</span>SVD ($A=U\Sigma V^\top$) is the cousin that works for <em>any</em> matrix, even non-square. Eigendecomposition is the square, same-basis-in-and-out special case — and for symmetric $A$ the two coincide.</aside>
+
+<div class="callout c-warn"><span class="tag">Diagonalization can fail</span>
+Not every matrix has $n$ independent eigenvectors. $\begin{bmatrix}1&1\\0&1\end{bmatrix}$ has the single eigenvalue $1$ but only <em>one</em> eigenvector direction — it is <strong>defective</strong> and cannot be diagonalized. Repeated eigenvalues are the warning sign (though repeats don't always cause it). This is one big reason ML leans on symmetric matrices, which — as we'll see — are <em>never</em> defective.</div>
+
+<div class="callout c-good"><span class="tag">Verified</span>
+For the non-symmetric $B=\begin{bmatrix}4&1\\2&3\end{bmatrix}$, NumPy gives eigenvalues $5$ and $2$, eigenvectors $\begin{bmatrix}.707\\.707\end{bmatrix}$ and $\begin{bmatrix}-.447\\.894\end{bmatrix}$ — note they are <em>not</em> perpendicular — and $V\Lambda V^{-1}$ reconstructs $B$ exactly (E1).</div>
+
+<!-- ════════════ 3 ════════════ -->
+<h2 id="s3"><span class="num">Section 3</span>The Spectral Theorem — the crown jewel</h2>
+
+<p>Everything gets dramatically nicer when $A$ is <strong>symmetric</strong> ($A=A^\top$). This is the single most useful theorem in applied linear algebra:</p>
+
+<div class="callout c-anchor"><span class="tag">Spectral Theorem</span>
+Every real symmetric matrix $A$ has (1) <strong>real</strong> eigenvalues, and (2) a full set of <strong>orthonormal</strong> eigenvectors. Equivalently, it factors as
+<div class="mathband" style="background:transparent;border:0;box-shadow:none;padding:6px 0">$$ A = Q\Lambda Q^\top, \qquad Q^\top Q = I. $$</div>
+Because $Q$ is orthogonal, $Q^{-1}=Q^\top$ — the inverse is free.</div>
+
+<p>Three gifts are hiding in that one line, and each matters downstream:</p>
+<ul>
+  <li><strong>Real eigenvalues.</strong> No complex numbers to worry about — the stretches are honest real scalings. (A general matrix can rotate, giving complex eigenvalues.)</li>
+  <li><strong>Orthonormal eigenvectors.</strong> The special directions are mutually perpendicular and unit length. They form a clean rotated coordinate frame — the principal axes of Figure 1.</li>
+  <li><strong>$Q^{-1}=Q^\top$.</strong> The "change of language" is just a rotation, and rotating back is transposing. No matrix inverse, no numerical grief.</li>
+</ul>
+
+<p>So a symmetric matrix does something beautifully simple: <strong>rotate into the eigen-frame, scale each axis by $\lambda_i$, rotate back.</strong> That is the whole action. Contrast the general case $A=V\Lambda V^{-1}$, where $V$ can be a skewed, ill-conditioned basis and $V^{-1}$ a genuine (possibly unstable) inverse.</p>
+
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 640 210" role="img" aria-label="Symmetric matrix as rotate, scale, rotate back">
+  <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#5A4FCF"/></marker></defs>
+  <g font-family="JetBrains Mono, monospace" font-size="12" fill="#26252E" text-anchor="middle">
+    <rect x="20" y="70" width="120" height="70" rx="10" fill="none" stroke="#C9C4B6"/>
+    <text x="80" y="100">input x</text><text x="80" y="120" font-size="10" fill="#9C99A6">original axes</text>
+    <rect x="200" y="70" width="120" height="70" rx="10" fill="none" stroke="#0E8C80"/>
+    <text x="260" y="100" fill="#0E8C80">Qᵀx</text><text x="260" y="120" font-size="10" fill="#9C99A6">eigen axes</text>
+    <rect x="380" y="70" width="120" height="70" rx="10" fill="none" stroke="#B07514"/>
+    <text x="440" y="100" fill="#B07514">ΛQᵀx</text><text x="440" y="120" font-size="10" fill="#9C99A6">scaled</text>
+    <rect x="540" y="70" width="90" height="70" rx="10" fill="none" stroke="#5A4FCF"/>
+    <text x="585" y="100" fill="#5A4FCF">QΛQᵀx</text><text x="585" y="120" font-size="10" fill="#9C99A6">back</text>
+    <line x1="142" y1="105" x2="196" y2="105" stroke="#5A4FCF" stroke-width="2" marker-end="url(#ar)"/>
+    <line x1="322" y1="105" x2="376" y2="105" stroke="#5A4FCF" stroke-width="2" marker-end="url(#ar)"/>
+    <line x1="502" y1="105" x2="536" y2="105" stroke="#5A4FCF" stroke-width="2" marker-end="url(#ar)"/>
+    <text x="169" y="60" font-size="10" fill="#0E8C80">rotate</text>
+    <text x="349" y="60" font-size="10" fill="#B07514">scale</text>
+    <text x="519" y="60" font-size="10" fill="#5A4FCF">rotate back</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">A symmetric matrix = rotate into the eigen-frame · scale each axis · rotate back</div>
+</div>
+<figcaption><strong>Figure 2 — What $A=Q\Lambda Q^\top$ does to a vector.</strong> The only "work" is the diagonal scaling in the middle; the two rotations are inverses of each other. This is why symmetric matrices are so cheap to reason about and so stable to compute with.</figcaption>
+</figure>
+
+<details class="deeper"><summary>Going deeper — why symmetric ⇒ orthogonal eigenvectors</summary><div class="deep-body">
+  <p>Take two eigenpairs with <em>distinct</em> eigenvalues: $A\mathbf{v}_1=\lambda_1\mathbf{v}_1$, $A\mathbf{v}_2=\lambda_2\mathbf{v}_2$. Look at $\mathbf{v}_1^\top A\mathbf{v}_2$ two ways. Using symmetry $A=A^\top$:</p>
+  <div class="mathband">$$ \lambda_2\,\mathbf{v}_1^\top\mathbf{v}_2 = \mathbf{v}_1^\top A\mathbf{v}_2 = (A\mathbf{v}_1)^\top\mathbf{v}_2 = \lambda_1\,\mathbf{v}_1^\top\mathbf{v}_2. $$</div>
+  <p>So $(\lambda_1-\lambda_2)\,\mathbf{v}_1^\top\mathbf{v}_2=0$. Since $\lambda_1\ne\lambda_2$, we must have $\mathbf{v}_1^\top\mathbf{v}_2=0$ — the eigenvectors are <strong>orthogonal</strong>. (For repeated eigenvalues you can still <em>choose</em> an orthonormal set within each eigenspace via Gram–Schmidt.) Realness of the eigenvalues follows from a similar conjugate-transpose argument. Full treatment: <span class="secs"><b>MML §4.5</b></span>.</p>
+</div></details>
+
+<!-- ════════════ 4 ════════════ -->
+<h2 id="s4"><span class="num">Section 4</span>Why symmetric matrices are the ones ML actually uses</h2>
+
+<p>Here is the punchline that makes this session matter: <strong>the matrices that show up at the core of ML are overwhelmingly symmetric</strong>, so the Spectral Theorem applies almost everywhere you look.</p>
+
+<table class="sum">
+  <thead><tr><th>Matrix</th><th>Where it appears</th><th>What its eigenvalues mean</th></tr></thead>
+  <tbody>
+  <tr><td>Covariance $\Sigma$</td><td>PCA, Gaussians, whitening</td><td>Variance along each principal axis</td></tr>
+  <tr><td>Gram / kernel $K$</td><td>SVMs, kernel methods, GPs</td><td>Similarity structure; spread of the feature map</td></tr>
+  <tr><td>Hessian $\nabla^2 f$</td><td>Optimization, loss curvature</td><td>Curvature per direction; conditioning of training</td></tr>
+  <tr><td>Graph Laplacian $L$</td><td>Spectral clustering, GNNs</td><td>Connectivity; number of components ($\lambda=0$)</td></tr>
+  </tbody>
+</table>
+
+<p>Most of these are not just symmetric but <strong>positive semidefinite (PSD)</strong>: symmetric <em>and</em> all $\lambda_i\ge 0$, written $A\succeq 0$. A covariance matrix is the cleanest example — it can't have a negative eigenvalue because that would mean a direction with negative variance, which is nonsense.</p>
+
+<div class="callout c-good"><span class="tag">Verified</span>
+A covariance matrix estimated from 200 random samples has eigenvalues $[\,0.705,\ 4.586,\ 10.898\,]$ — all strictly positive, exactly as PSD-ness predicts (E3). Those three numbers <em>are</em> the variances PCA would report along its three principal components.</div>
+
+<div class="callout c-anchor"><span class="tag">The bridge to PCA</span>
+PCA <em>is</em> the eigendecomposition of the covariance matrix. The eigenvectors are the principal directions; the eigenvalues are the variance captured along each. "Keep the top-$k$ components" literally means "keep the $k$ largest eigenvalues of $\Sigma$." Everything you'll do with PCA, whitening, and Mahalanobis distance is this section applied.</div>
+
+<p>Eigenvalues also read directly as <strong>curvature</strong> when $A$ is a Hessian. A large spread between the biggest and smallest eigenvalue (a large <em>condition number</em> $\kappa=\lambda_{\max}/\lambda_{\min}$) means the loss surface is a long narrow valley — and that is precisely when plain gradient descent zig-zags and crawls. We'll cash this in during the optimization pillar.</p>
+
+<!-- ════════════ 5 ════════════ -->
+<h2 id="s5"><span class="num">Section 5</span>Powers &amp; matrix functions through the spectrum</h2>
+
+<p>Once you have $A=Q\Lambda Q^\top$, raising $A$ to a power is almost free, because the middle $Q^\top Q=I$ terms cancel:</p>
+
+<div class="mathband">$$ A^k = Q\Lambda Q^\top Q\Lambda Q^\top\cdots = Q\,\Lambda^k\,Q^\top, \qquad \Lambda^k=\mathrm{diag}(\lambda_1^k,\dots,\lambda_n^k). $$</div>
+
+<p>You just raise the eigenvalues to the power. The same trick defines <em>any</em> analytic function of a matrix — $A^{-1}$ (use $\lambda_i^{-1}$), $\sqrt{A}$ (use $\sqrt{\lambda_i}$, needs PSD), even $e^{A}=Q\,\mathrm{diag}(e^{\lambda_i})\,Q^\top$. This is how you make sense of "a matrix inside an exponential," which appears in continuous-time models and diffusion.</p>
+
+<div class="callout c-good"><span class="tag">Verified</span>
+For $A=\begin{bmatrix}2&1\\1&2\end{bmatrix}$, computing $Q\Lambda^{10}Q^\top$ gives $\begin{bmatrix}29525&29524\\29524&29525\end{bmatrix}$, exactly matching <code>np.linalg.matrix_power(A,10)</code> (E2). The eigenvalues $3^{10}$ and $1^{10}$ do all the work.</div>
+
+<p>This also explains <strong>long-run behaviour</strong>. Apply $A$ repeatedly to a vector and the direction of the largest $|\lambda|$ takes over — every other component shrinks relative to it. That is <strong>power iteration</strong>, and it is how PageRank finds its ranking and how the top principal component can be found without a full decomposition.</p>
+
+<div class="callout c-good"><span class="tag">Verified</span>
+Starting from $[1,0]$ and repeatedly applying $A$ then normalizing converges to $[0.707,\,0.707]$ — the eigenvector of the dominant eigenvalue $3$ — with Rayleigh quotient $\mathbf{v}^\top A\mathbf{v}=3.00$ (E6).</div>
+
+<!-- ════════════ 6 ════════════ -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy — <code>eig</code> vs <code>eigh</code> <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<p>NumPy gives you two routines, and choosing correctly is a real-world competence, not a detail.</p>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+
+<span class="c"># symmetric matrix -> ALWAYS use eigh</span>
+A = np.array([[<span class="n">2.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">2.</span>]])
+w, Q = np.linalg.eigh(A)              <span class="c"># eigenvalues ascending, Q orthonormal</span>
+<span class="f">print</span>(w)                            <span class="c"># [1. 3.]</span>
+<span class="f">print</span>(Q.T @ Q)                      <span class="c"># identity -> columns orthonormal</span>
+<span class="f">print</span>(Q @ np.diag(w) @ Q.T)         <span class="c"># reconstructs A exactly</span>
+
+<span class="c"># general matrix -> eig (eigenvectors NOT orthogonal, maybe complex)</span>
+B = np.array([[<span class="n">4.</span>,<span class="n">1.</span>],[<span class="n">2.</span>,<span class="n">3.</span>]])
+wb, V = np.linalg.eig(B)
+<span class="f">print</span>(wb)                           <span class="c"># [5. 2.]</span>
+<span class="f">print</span>(V @ np.diag(wb) @ np.linalg.inv(V))   <span class="c"># reconstructs B</span></pre>
+<div class="out">[1. 3.]
+[[1. 0.]
+ [0. 1.]]
+[[2. 1.]
+ [1. 2.]]
+[5. 2.]
+[[4. 1.]
+ [2. 3.]]</div>
+
+<div class="callout c-good"><span class="tag">Use <code>eigh</code> for anything symmetric</span>
+<code>np.linalg.eigh</code> assumes symmetry and returns <strong>real, ascending</strong> eigenvalues with a genuinely <strong>orthonormal</strong> $Q$. It is faster and far more accurate than <code>eig</code> on the symmetric matrices you'll actually have (covariance, kernel, Hessian). Reach for <code>eig</code> only for genuinely non-symmetric matrices — and then expect possibly complex, non-orthogonal output.</div>
+
+<div class="callout c-warn"><span class="tag">Sort order &amp; sign</span>
+<code>eigh</code> returns eigenvalues <em>ascending</em> (so the top component is the <em>last</em> column); <code>eig</code> gives no guaranteed order. And eigenvectors are only defined up to sign — $\mathbf{v}$ and $-\mathbf{v}$ are both valid, so don't be surprised when a column flips sign between runs or libraries.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">You need the eigenvalues of a $500\times500$ covariance matrix for PCA. Which call?</div>
+  <button class="opt"><code>np.linalg.eig</code> — it's the general one, so it's safest.</button>
+  <button class="opt"><code>np.linalg.eigh</code> — covariance is symmetric, so use the symmetric solver.</button>
+  <button class="opt">Either works identically; there's no real difference.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">A matrix has a repeated eigenvalue and only one eigenvector direction for it. This matrix is…</div>
+  <button class="opt">Positive definite.</button>
+  <button class="opt">Symmetric.</button>
+  <button class="opt">Defective — it cannot be diagonalized.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════ RULES / TRAPS ════════════ -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Defective matrices</strong> lack a full eigenvector set and have no eigendecomposition — repeated eigenvalues are the red flag. (SVD always exists; eigendecomposition doesn't.)</li>
+  <li><strong>Complex eigenvalues</strong> are normal for non-symmetric real matrices — a rotation matrix has them. Symmetric ⇒ guaranteed real.</li>
+  <li><strong>Eigenvectors are non-unique:</strong> defined up to a nonzero scale (sign for unit vectors), and up to rotation <em>within</em> a repeated-eigenvalue subspace.</li>
+  <li><strong>Near-symmetric from floating point:</strong> a matrix that should be symmetric (e.g. $X^\top X$) may be off by $10^{-16}$; symmetrize with <code>(A+A.T)/2</code> before <code>eigh</code> if a routine complains.</li>
+</ul>
+
+<div class="callout c-trap"><span class="tag">Trap 1 · Using <code>eig</code> on symmetric matrices</span>You get slightly complex or non-orthogonal output from rounding, then waste an hour debugging. Use <code>eigh</code> for anything symmetric — always.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Assuming an inverse exists via eigenvalues</span>$A^{-1}=Q\Lambda^{-1}Q^\top$ only works if <em>no</em> eigenvalue is $0$. A zero eigenvalue means singular — and a tiny eigenvalue means ill-conditioned, so the "inverse" explodes.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Forgetting the sort order</span><code>eigh</code> returns ascending eigenvalues, so the top principal component is the <em>last</em> column of $Q$, not the first. Slicing the wrong end silently keeps your <em>least</em> important directions.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>An eigenvector is a direction the matrix <strong>only scales</strong>; the eigenvalue is the scale.</li>
+  <li><strong>$\operatorname{tr}=\sum\lambda_i$, $\det=\prod\lambda_i$</strong> — your two-second sanity checks.</li>
+  <li>Diagonalization $A=V\Lambda V^{-1}$ needs a full set of independent eigenvectors; repeats can break it.</li>
+  <li><strong>Symmetric ⇒ $A=Q\Lambda Q^\top$</strong> with real $\lambda$ and orthonormal $Q$ (so $Q^{-1}=Q^\top$). This is the Spectral Theorem.</li>
+  <li>ML's core matrices — covariance, kernel, Hessian, Laplacian — are symmetric, usually <strong>PSD</strong> ($\lambda_i\ge0$).</li>
+  <li>Functions of a symmetric matrix act on the <strong>eigenvalues</strong>: $A^k=Q\Lambda^kQ^\top$, $A^{-1}=Q\Lambda^{-1}Q^\top$.</li>
+  <li>Use <strong><code>eigh</code></strong> for symmetric, <strong><code>eig</code></strong> only for genuinely non-symmetric.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- ════════════ EXERCISES ════════════ -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Work them by hand where you can, then verify in NumPy. Solutions are worked in full.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Without a computer, give the eigenvalues of $\begin{bmatrix}2&1\\1&2\end{bmatrix}$ using only trace and determinant.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$\operatorname{tr}=4$ so $\lambda_1+\lambda_2=4$; $\det=3$ so $\lambda_1\lambda_2=3$. The pair summing to 4 and multiplying to 3 is $\{1,3\}$. (Equivalently solve $\lambda^2-4\lambda+3=0$.)</p>
+    <pre class="code">np.linalg.eigvalsh([[<span class="n">2</span>,<span class="n">1</span>],[<span class="n">1</span>,<span class="n">2</span>]])   <span class="c"># [1. 3.]</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Show that $\begin{bmatrix}1&1\\0&1\end{bmatrix}$ is defective by finding its eigenvector(s).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Only eigenvalue is $\lambda=1$ (triangular ⇒ diagonal entries). Solving $(A-I)\mathbf v=0$ gives $\begin{bmatrix}0&1\\0&0\end{bmatrix}\mathbf v=0$, so $v_2=0$ and $v_1$ free: the <em>only</em> eigenvector direction is $[1,0]$. One direction for a $2\times2$ matrix ⇒ not diagonalizable ⇒ <strong>defective</strong>.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>For a symmetric $A=Q\Lambda Q^\top$, prove $A^{-1}=Q\Lambda^{-1}Q^\top$ (assuming no zero eigenvalue), and say what goes wrong if some $\lambda_i=0$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Multiply: $(Q\Lambda Q^\top)(Q\Lambda^{-1}Q^\top)=Q\Lambda(Q^\top Q)\Lambda^{-1}Q^\top=Q\Lambda\Lambda^{-1}Q^\top=QQ^\top=I$, using $Q^\top Q=I$. So the product is the identity ⇒ it is the inverse. If any $\lambda_i=0$, then $\Lambda^{-1}$ needs $1/0$: $A$ is singular and has <em>no</em> inverse. A tiny-but-nonzero $\lambda_i$ makes $1/\lambda_i$ huge — the matrix is ill-conditioned and the inverse is numerically dangerous.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Build a random covariance matrix $\Sigma=\tfrac1n X^\top X$ from data $X$ and confirm empirically that all its eigenvalues are $\ge 0$. Why must this hold?</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">rng = np.random.default_rng(<span class="n">0</span>)
+X = rng.standard_normal((<span class="n">200</span>, <span class="n">3</span>))
+S = X.T @ X / <span class="n">200</span>
+np.linalg.eigvalsh(S)          <span class="c"># all entries >= 0</span></pre>
+    <p><strong>Why:</strong> for any direction $\mathbf u$, $\mathbf u^\top\Sigma\mathbf u=\tfrac1n\lVert X\mathbf u\rVert^2\ge0$ — that's variance, which can't be negative. A matrix with $\mathbf u^\top A\mathbf u\ge0$ for all $\mathbf u$ is PSD, and PSD $\iff$ all eigenvalues $\ge0$.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Implement power iteration from scratch and recover the dominant eigenvector of $A=\begin{bmatrix}2&1\\1&2\end{bmatrix}$. Estimate its eigenvalue with the Rayleigh quotient $\mathbf v^\top A\mathbf v$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">A = np.array([[<span class="n">2.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">2.</span>]])
+v = np.array([<span class="n">1.</span>, <span class="n">0.</span>])
+<span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">50</span>):
+    v = A @ v
+    v = v / np.linalg.norm(v)
+v, v @ A @ v          <span class="c"># [0.707 0.707], 3.0</span></pre>
+    <p>Each application scales the $\lambda=3$ component by $3$ and the $\lambda=1$ component by $1$, so the ratio blows up in favour of the dominant direction; normalizing keeps it bounded. The Rayleigh quotient of a unit eigenvector returns its eigenvalue exactly — here $3.0$.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- ════════════ PAYOFF + INTERVIEW ════════════ -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>PCA / whitening:</strong> eigendecompose the covariance; eigenvectors are principal axes, eigenvalues are variances.</li>
+  <li><strong>Optimization:</strong> Hessian eigenvalues are curvature; their spread (condition number) predicts how slowly gradient descent converges.</li>
+  <li><strong>Spectral clustering &amp; GNNs:</strong> eigenvectors of the graph Laplacian expose community structure; the multiplicity of $\lambda=0$ counts connected components.</li>
+  <li><strong>Stability &amp; dynamics:</strong> spectral radius $\rho(A)$ decides whether repeated application (a recurrence, a Markov chain, a residual stream) blows up or decays.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What does the Spectral Theorem say, and why does it matter for ML?</div><div class="a">Every real symmetric matrix is $Q\Lambda Q^\top$ with real eigenvalues and orthonormal eigenvectors. It matters because ML's core matrices (covariance, kernel, Hessian, Laplacian) are symmetric, so they always decompose cleanly, stably, and with $Q^{-1}=Q^\top$.</div></div>
+<div class="qa"><div class="q">Q2 · Difference between <code>eig</code> and <code>eigh</code>?</div><div class="a"><code>eigh</code> assumes symmetry: real ascending eigenvalues, orthonormal eigenvectors, faster and more accurate. <code>eig</code> is general: possibly complex, non-orthogonal, unordered. Use <code>eigh</code> for symmetric matrices.</div></div>
+<div class="qa"><div class="q">Q3 · What does a positive-semidefinite matrix mean geometrically?</div><div class="a">$\mathbf u^\top A\mathbf u\ge0$ for all $\mathbf u$ — it never flips a vector to point "backwards" past 90°. Equivalently all eigenvalues $\ge0$. Covariance matrices are PSD because that quadratic form is a variance.</div></div>
+<div class="qa"><div class="q">Q4 · How do eigenvalues relate to PCA?</div><div class="a">PCA is the eigendecomposition of the covariance matrix; eigenvectors are the principal directions and eigenvalues are the variance captured along each. Keeping the top-$k$ = keeping the $k$ largest eigenvalues.</div></div>
+<div class="qa"><div class="q">Q5 · When can a matrix NOT be diagonalized?</div><div class="a">When it lacks a full set of independent eigenvectors — a defective matrix, flagged by repeated eigenvalues with too-small eigenspaces. Symmetric matrices are never defective; SVD always exists even when eigendecomposition doesn't.</div></div>
+
+<hr class="divider">
+
+<!-- ════════════ SUMMARY ════════════ -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Eigen-equation $A\mathbf v=\lambda\mathbf v$</td><td>The directions a matrix only scales</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>tr = Σλ, det = Πλ</td><td>Instant sanity checks</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>Diagonalization $V\Lambda V^{-1}$</td><td>Matrix as independent scalings in a smart basis</td><td class="freq f-h">High</td></tr>
+  <tr><td>Spectral Theorem $Q\Lambda Q^\top$</td><td>Symmetric ⇒ real λ, orthonormal Q, free inverse</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>PSD ($\lambda_i\ge0$)</td><td>Covariance, kernels; valid variance/curvature</td><td class="freq f-h">High</td></tr>
+  <tr><td>$A^k=Q\Lambda^kQ^\top$</td><td>Powers, inverses, matrix functions, power iteration</td><td class="freq f-m">Medium</td></tr>
+  <tr><td><code>eig</code> vs <code>eigh</code></td><td>Correct, stable computation in practice</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">A symmetric matrix is just rotate → scale → rotate back.</div>
+  <p><span class="cc-sub">Reusable idea:</span> eigendecomposition rewrites a matrix as independent scalings in a cleverly chosen basis. The whole toolkit:</p>
+  <ul>
+    <li><strong>$A\mathbf v=\lambda\mathbf v$</strong> — an eigenvector is a direction the matrix only stretches; the eigenvalue is the stretch. ($\operatorname{tr}=\sum\lambda_i$, $\det=\prod\lambda_i$ are your instant checks.)</li>
+    <li><strong>Spectral Theorem</strong> — symmetric ⇒ $A=Q\Lambda Q^\top$ with <em>real</em> eigenvalues and <em>orthonormal</em> $Q$, so the inverse is free ($Q^{-1}=Q^\top$).</li>
+    <li><strong>PSD</strong> ($\lambda_i\ge0$) is the ML default — covariance, kernels, Hessians — because the quadratic form is a variance/curvature that can't go negative.</li>
+    <li><strong>Functions act on eigenvalues:</strong> $A^k=Q\Lambda^kQ^\top$, $A^{-1}=Q\Lambda^{-1}Q^\top$; the dominant $\lambda$ governs long-run behaviour (power iteration, PageRank).</li>
+    <li>Compute with <strong><code>eigh</code></strong> for symmetric, <code>eig</code> only for genuinely non-symmetric.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> find the directions a matrix only scales, and it stops being a grid of numbers — it becomes a list of independent stretches. PCA, loss curvature, spectral clustering, and matrix functions are all this one idea wearing different clothes.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>02 · Quadratic forms &amp; positive-definite matrices →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">We turn the eigenvalues we just found into <em>curvature</em>: the quadratic form $\mathbf x^\top A\mathbf x$, what positive-definiteness really buys you, and how it shapes covariance ellipses, kernels, and the bowl your optimizer rolls down. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Matrix Calculus — Jacobians & Hessians · Math for ML · Advanced</title>
+<meta name="description" content="Differentiating vector- and matrix-valued expressions without index soup: the gradient, Jacobian, Hessian, the chain rule as matrix products, and the finite-difference gradient check.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Matrix Calculus — Jacobians & Hessians · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="03_matrix_calculus">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Four kinds of derivative</a>
+  <a href="#s2">2 · The cookbook</a>
+  <a href="#s3">3 · The Jacobian</a>
+  <a href="#s4">4 · Chain rule = backprop</a>
+  <a href="#s5">5 · Hessian & gradient checks</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Linear Algebra · 03</div>
+    <h1>Matrix Calculus — Jacobians &amp; Hessians</h1>
+    <p class="lede">Backprop is just the chain rule wearing a matrix. Learn to differentiate vector- and matrix-valued expressions directly — no index soup — and the gradients that power training become a handful of clean, reusable formulas.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: gradients (foundational track), Sessions 01–02</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">In the foundational track you took derivatives one component at a time. That does not scale: a single transformer layer has millions of parameters, and nobody differentiates those by hand element-by-element. <strong>Matrix calculus</strong> is the shorthand that lets you write $\nabla_{\mathbf{x}}\lVert A\mathbf{x}-\mathbf{b}\rVert^2 = 2A^\top(A\mathbf{x}-\mathbf{b})$ in one line and mean it. Master a small cookbook of these identities and the chain rule as a product of Jacobians, and every gradient in ML — from least squares to backprop — becomes routine.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Name the four derivative "shapes" (scalar/vector in, scalar/vector out) and what object each produces.</li>
+    <li>Apply the core identities: $\nabla(\mathbf{a}^\top\mathbf{x})$, $\nabla(\mathbf{x}^\top A\mathbf{x})$, $\nabla\lVert A\mathbf{x}-\mathbf{b}\rVert^2$.</li>
+    <li>Read the <strong>Jacobian</strong> as the best local linear map, and compose maps by multiplying Jacobians — which <em>is</em> backprop.</li>
+    <li>Recognize the <strong>Hessian</strong> as the Jacobian of the gradient, tying back to Session 02's curvature.</li>
+    <li>Sanity-check any analytic gradient with a finite-difference <strong>gradient check</strong>.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Maps to <em>Mathematics for Machine Learning</em> <span class="secs">Ch 5 (Vector Calculus): §5.1–5.3 gradients &amp; Jacobians, §5.6 backprop</span>, and Petersen &amp; Pedersen, <em>The Matrix Cookbook</em> §2 for the identity table.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Four kinds of derivative</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">The gradient cookbook</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">The Jacobian as a local linear map</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Chain rule = backprop</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Hessian &amp; gradient checks</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$\nabla_{\mathbf{x}}f$</span><span class="def">Gradient of a scalar $f$ w.r.t. vector $\mathbf{x}$ — a vector of partials, same shape as $\mathbf{x}$.</span>
+    <span class="sym">$J = \frac{\partial \mathbf{f}}{\partial \mathbf{x}}$</span><span class="def">Jacobian of a vector map $\mathbf{f}:\mathbb{R}^n\to\mathbb{R}^m$ — an $m\times n$ matrix, $J_{ij}=\partial f_i/\partial x_j$.</span>
+    <span class="sym">$H = \nabla^2 f$</span><span class="def">Hessian — the $n\times n$ matrix of second partials; the Jacobian of the gradient.</span>
+    <span class="sym">$\mathbf{a}^\top\mathbf{x}$</span><span class="def">A linear form (scalar); its gradient is the constant vector $\mathbf{a}$.</span>
+    <span class="sym">$\lVert\cdot\rVert^2$</span><span class="def">Squared L2 norm; $\lVert\mathbf{r}\rVert^2=\mathbf{r}^\top\mathbf{r}$.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Four kinds of derivative</h2>
+<p>Everything in matrix calculus is bookkeeping about <em>shapes</em>. What you differentiate and what you differentiate <em>with respect to</em> determines the shape of the answer:</p>
+<table class="sum">
+  <thead><tr><th>$f$ is…</th><th>w.r.t.…</th><th>Result</th><th>Shape</th></tr></thead>
+  <tbody>
+  <tr><td>scalar</td><td>scalar</td><td>ordinary derivative</td><td>scalar</td></tr>
+  <tr><td>scalar</td><td>vector $\mathbf{x}\in\mathbb{R}^n$</td><td><strong>gradient</strong> $\nabla f$</td><td>$n$-vector</td></tr>
+  <tr><td>vector $\mathbf{f}\in\mathbb{R}^m$</td><td>vector $\mathbf{x}\in\mathbb{R}^n$</td><td><strong>Jacobian</strong> $J$</td><td>$m\times n$</td></tr>
+  <tr><td>scalar</td><td>vector, twice</td><td><strong>Hessian</strong> $H$</td><td>$n\times n$</td></tr>
+  </tbody>
+</table>
+<aside class="side"><span class="lbl">Layout convention</span>We use <b>denominator layout</b>: $\nabla f$ has the same shape as $\mathbf{x}$, and $J$ is $m\times n$ (outputs × inputs). Pick one convention and never mix — half of all sign/shape bugs are a silent layout switch.</aside>
+<p>The single rule that keeps you sane: <strong>track shapes like units.</strong> If a formula claims to be a gradient, it must have $\mathbf{x}$'s shape; if a chain-rule product doesn't have conformable dimensions, it's wrong before you even evaluate it.</p>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>The gradient cookbook</h2>
+<p>Three identities cover the vast majority of ML gradients. Learn them cold.</p>
+
+<h3>Linear form</h3>
+<div class="mathband">$$ f(\mathbf{x})=\mathbf{a}^\top\mathbf{x} \quad\Longrightarrow\quad \nabla f = \mathbf{a}. $$</div>
+<p>The gradient of a linear function is the constant direction it points in — the vector analogue of $\frac{d}{dx}(ax)=a$.</p>
+
+<h3>Quadratic form</h3>
+<div class="mathband">$$ f(\mathbf{x})=\mathbf{x}^\top A\mathbf{x} \quad\Longrightarrow\quad \nabla f = (A+A^\top)\mathbf{x} \;\overset{A=A^\top}{=}\; 2A\mathbf{x}. $$</div>
+<p>This is Session 02's landscape, differentiated. Its second derivative — the Hessian — is $A+A^\top=2A$, a <em>constant</em> matrix: a quadratic has constant curvature, exactly the PD/saddle story from last session.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For $A=\begin{bmatrix}2&1\\1&3\end{bmatrix}$ (symmetric), at $\mathbf{x}=[1,2]$: $2A\mathbf{x}=[8,14]$, and a finite-difference gradient returns $[8,14]$ to machine precision (E1).</div>
+
+<h3>Least squares — the identity you'll use most</h3>
+<div class="mathband">$$ f(\mathbf{x})=\lVert A\mathbf{x}-\mathbf{b}\rVert^2 \quad\Longrightarrow\quad \nabla f = 2A^\top(A\mathbf{x}-\mathbf{b}). $$</div>
+<p>Setting this to zero gives the <strong>normal equations</strong> $A^\top A\,\mathbf{x}=A^\top\mathbf{b}$ — the closed-form solution of linear regression, derived in one line of matrix calculus.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+$A=\begin{bmatrix}1&2\\3&4\end{bmatrix},\,\mathbf{b}=[1,0],\,\mathbf{x}=[1,1]$: analytic $2A^\top(A\mathbf{x}-\mathbf{b})=[46,64]$, matching finite differences exactly (E2). And solving the normal equations for a $3\times2$ system gives $\mathbf{x}^\star=[0.667,\,0.5]$ where the gradient is zero (E-LS).</div>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>The Jacobian as a local linear map</h2>
+<p>For a vector map $\mathbf{f}:\mathbb{R}^n\to\mathbb{R}^m$, the <strong>Jacobian</strong> stacks all first partials:</p>
+<div class="mathband">$$ J = \frac{\partial\mathbf{f}}{\partial\mathbf{x}} = \begin{bmatrix} \partial f_1/\partial x_1 & \cdots & \partial f_1/\partial x_n \\ \vdots & & \vdots \\ \partial f_m/\partial x_1 & \cdots & \partial f_m/\partial x_n \end{bmatrix}. $$</div>
+<p>The deep idea: <strong>$J$ is the best linear approximation of $\mathbf{f}$ near a point.</strong> Zoom in far enough on any smooth map and it looks like the linear map $\mathbf{d}\mapsto J\mathbf{d}$:</p>
+<div class="mathband">$$ \mathbf{f}(\mathbf{x}_0+\mathbf{d}) \approx \mathbf{f}(\mathbf{x}_0) + J\,\mathbf{d}. $$</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="jacplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">map</span><span>g(x,y) = [ x²−y² , 2xy ]</span></div>
+    <div class="slider-row"><span>cₓ</span><input type="range" id="sCx" min="-1.6" max="1.6" step="0.05" value="0.8"><span>c_y</span><input type="range" id="sCy" min="-1.6" max="1.6" step="0.05" value="0.5"><span>radius</span><input type="range" id="sR" min="0.08" max="1.1" step="0.02" value="0.3"></div>
+    <div class="readout">
+      <span><span class="k">J at c</span> = <span class="vd" id="rJac">[…]</span></span>
+      <span><span class="k">neighborhood</span> <span class="va" id="rFit">tight → linear fits</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — The Jacobian is the best local linear map.</strong> We apply the nonlinear map $g(x,y)=[x^2-y^2,\,2xy]$ to a small grid around a point $c$. The <b>indigo grid</b> is the Jacobian's linear prediction $g(c)+J\mathbf{d}$; the <b>teal dots</b> are the true images $g(c+\mathbf{d})$. With a small radius the dots sit right on the grid — the linear map is exact to first order. Grow the radius and the dots peel away, exposing the curvature (the second-order term). That "shrink until it's linear" is the whole meaning of a derivative.</figcaption>
+</figure>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>The chain rule is a product of Jacobians — this is backprop</h2>
+<p>Compose two maps, $\mathbf{y}=\mathbf{g}(\mathbf{x})$ then $\mathbf{z}=\mathbf{f}(\mathbf{y})$. The Jacobian of the composition is the <strong>matrix product</strong> of the individual Jacobians:</p>
+<div class="mathband">$$ \frac{\partial\mathbf{z}}{\partial\mathbf{x}} = \underbrace{\frac{\partial\mathbf{z}}{\partial\mathbf{y}}}_{J_f}\; \underbrace{\frac{\partial\mathbf{y}}{\partial\mathbf{x}}}_{J_g}. $$</div>
+<p>A neural network is exactly a long composition — linear layer, nonlinearity, linear layer, … — so its gradient is a long product of layer Jacobians. <strong>Backpropagation is that product, evaluated right-to-left</strong> so you multiply matrices by vectors instead of matrices by matrices (far cheaper). That single efficiency choice is why deep learning is tractable.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For $g(\mathbf{x})=[x_0x_1,\ x_0^2+x_1^2]$ and $f(\mathbf{u})=[u_0+u_1,\ u_0u_1]$ at $\mathbf{x}=[1,2]$: multiplying $J_f J_g$ gives $\begin{bmatrix}4&5\\14&13\end{bmatrix}$, matching the numeric Jacobian of $f\circ g$ exactly (E4).</div>
+<aside class="side"><span class="lbl">Forward vs reverse</span>Left-to-right = <b>forward-mode</b> AD (cheap when few inputs); right-to-left = <b>reverse-mode</b> = backprop (cheap when few outputs — like a scalar loss). Same chain rule, opposite multiplication order.</aside>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>The Hessian, and always check your gradient</h2>
+<p>The <strong>Hessian</strong> is the Jacobian of the gradient — differentiate twice:</p>
+<div class="mathband">$$ H = \nabla^2 f = \frac{\partial(\nabla f)}{\partial\mathbf{x}}, \qquad H_{ij}=\frac{\partial^2 f}{\partial x_i\,\partial x_j}. $$</div>
+<p>For smooth $f$ it's <strong>symmetric</strong> (mixed partials commute — Clairaut's theorem), which is why Session 02's entire PD/saddle apparatus applies to it. For a quadratic $\mathbf{x}^\top A\mathbf{x}$, $H=2A$ everywhere.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+$\nabla^2(\mathbf{x}^\top A\mathbf{x})=2A=\begin{bmatrix}4&2\\2&6\end{bmatrix}$ for the symmetric $A$ above — constant, symmetric, and (since $A\succ0$) positive definite, so this quadratic is a bowl (E-H).</div>
+
+<h3>The gradient check — a habit, not an option</h3>
+<p>Analytic gradients are error-prone. The <strong>finite-difference gradient check</strong> catches almost every mistake in seconds:</p>
+<div class="mathband">$$ \frac{\partial f}{\partial x_i} \approx \frac{f(\mathbf{x}+h\mathbf{e}_i)-f(\mathbf{x}-h\mathbf{e}_i)}{2h}, \qquad h\approx10^{-6}. $$</div>
+<p>Use the <em>central</em> difference (error $O(h^2)$, not $O(h)$), and compare to your analytic gradient. If they don't match to ~6 digits, your formula is wrong. Every result marked "Verified" on this page was produced by exactly this check.</p>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+
+<span class="k">def</span> <span class="f">num_grad</span>(f, x, h=<span class="n">1e-6</span>):
+    g = np.zeros_like(x)
+    <span class="k">for</span> i <span class="k">in</span> <span class="f">range</span>(<span class="f">len</span>(x)):
+        e = np.zeros_like(x); e[i] = h
+        g[i] = (f(x+e) - f(x-e)) / (<span class="n">2</span>*h)     <span class="c"># central difference</span>
+    <span class="k">return</span> g
+
+A = np.array([[<span class="n">2.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">3.</span>]]); x = np.array([<span class="n">1.</span>,<span class="n">2.</span>])
+<span class="f">print</span>(<span class="n">2</span>*A@x)                          <span class="c"># [ 8. 14.]  analytic grad of xᵀAx</span>
+<span class="f">print</span>(num_grad(<span class="k">lambda</span> v: v@A@v, x))  <span class="c"># [ 8. 14.]  matches</span>
+
+<span class="c"># least squares gradient = normal equations when set to 0</span>
+Am = np.array([[<span class="n">1.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">2.</span>],[<span class="n">1.</span>,<span class="n">3.</span>]]); b = np.array([<span class="n">1.</span>,<span class="n">2.</span>,<span class="n">2.</span>])
+xstar = np.linalg.solve(Am.T@Am, Am.T@b)
+<span class="f">print</span>(xstar)                        <span class="c"># [0.667 0.5]</span>
+<span class="f">print</span>(<span class="n">2</span>*Am.T@(Am@xstar - b))        <span class="c"># [0. 0.]  gradient vanishes at the optimum</span></pre>
+<div class="out">[ 8. 14.]
+[ 8. 14.]
+[0.6667 0.5   ]
+[-0. -0.]</div>
+
+<div class="callout c-good"><span class="tag">This is autodiff, by hand</span>
+PyTorch/JAX automate exactly this: they store each op's local Jacobian and multiply them via the chain rule (reverse-mode). Knowing the cookbook means you can read, debug, and sanity-check what autograd produces — and derive closed forms when they're cheaper.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">The gradient of $\lVert A\mathbf{x}-\mathbf{b}\rVert^2$ with respect to $\mathbf{x}$ is…</div>
+  <button class="opt">$A(A\mathbf{x}-\mathbf{b})$</button>
+  <button class="opt">$2A^\top(A\mathbf{x}-\mathbf{b})$</button>
+  <button class="opt">$2(A\mathbf{x}-\mathbf{b})$</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">Backprop multiplies layer Jacobians right-to-left because…</div>
+  <button class="opt">It's the only mathematically valid order.</button>
+  <button class="opt">Matrix multiplication isn't commutative, so order is fixed.</button>
+  <button class="opt">With a scalar loss, right-to-left keeps every product a matrix-times-vector — much cheaper.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Layout consistency:</strong> denominator vs numerator layout transpose everything. Fix one convention across a derivation.</li>
+  <li><strong>Non-symmetric $A$:</strong> $\nabla(\mathbf{x}^\top A\mathbf{x})=(A+A^\top)\mathbf{x}$; the shortcut $2A\mathbf{x}$ is only valid when $A=A^\top$.</li>
+  <li><strong>Non-differentiable points:</strong> ReLU at 0, $\lVert\cdot\rVert_1$ — use subgradients; the finite-difference check misbehaves right at the kink.</li>
+  <li><strong>$h$ too small</strong> in a gradient check drowns in floating-point round-off; $h\approx10^{-6}$ with central differences is the sweet spot.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Forgetting the transpose</span>The least-squares gradient is $2A^\top(\cdots)$, not $2A(\cdots)$. Shape-check: $A$ is $m\times n$, the residual is $m$-long, so you need $A^\top$ ($n\times m$) to land back in $\mathbb{R}^n$.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · One-sided differences</span>Forward difference $\frac{f(x+h)-f(x)}{h}$ has $O(h)$ error and will fail a tight gradient check; always use the central form.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Trusting an unchecked gradient</span>A wrong analytic gradient can still <em>look</em> like it's training (loss drifts down slowly). Always run the finite-difference check on a small input before trusting a hand-derived gradient.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li><strong>Track shapes like units</strong> — the answer's shape is fixed by what you differentiate w.r.t.</li>
+  <li>Memorize three: $\nabla(\mathbf{a}^\top\mathbf{x})=\mathbf{a}$, $\nabla(\mathbf{x}^\top A\mathbf{x})=2A\mathbf{x}$, $\nabla\lVert A\mathbf{x}-\mathbf{b}\rVert^2=2A^\top(A\mathbf{x}-\mathbf{b})$.</li>
+  <li>The <strong>Jacobian</strong> is the best local linear map; $\mathbf{f}(\mathbf{x}_0+\mathbf{d})\approx\mathbf{f}(\mathbf{x}_0)+J\mathbf{d}$.</li>
+  <li><strong>Chain rule = product of Jacobians</strong>; backprop evaluates it right-to-left. That's the whole of autodiff.</li>
+  <li>The <strong>Hessian</strong> is the Jacobian of the gradient — symmetric, and Session 02's curvature.</li>
+  <li>Always run a <strong>central finite-difference gradient check</strong> before trusting a hand-derived gradient.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Derive by hand, then verify with a finite-difference check.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Derive $\nabla(\mathbf{x}^\top A\mathbf{x})$ for symmetric $A$ from the sum $\sum_{ij}A_{ij}x_ix_j$, and evaluate for $A=\begin{bmatrix}2&1\\1&3\end{bmatrix}$, $\mathbf{x}=[1,2]$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$\partial/\partial x_k\sum_{ij}A_{ij}x_ix_j=\sum_j A_{kj}x_j+\sum_i A_{ik}x_i=(A\mathbf{x})_k+(A^\top\mathbf{x})_k$. For symmetric $A$ that's $2(A\mathbf{x})_k$. Here $A\mathbf{x}=[4,7]$ so $\nabla=[8,14]$.</p>
+    <pre class="code">A=np.array([[<span class="n">2.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">3.</span>]]); <span class="n">2</span>*A@np.array([<span class="n">1.</span>,<span class="n">2.</span>])  <span class="c"># [8. 14.]</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Write the finite-difference gradient checker and use it to confirm $\nabla\lVert A\mathbf{x}-\mathbf{b}\rVert^2=2A^\top(A\mathbf{x}-\mathbf{b})$ for $A=\begin{bmatrix}1&2\\3&4\end{bmatrix}$, $\mathbf{b}=[1,0]$, $\mathbf{x}=[1,1]$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">A=np.array([[<span class="n">1.</span>,<span class="n">2.</span>],[<span class="n">3.</span>,<span class="n">4.</span>]]); b=np.array([<span class="n">1.</span>,<span class="n">0.</span>]); x=np.array([<span class="n">1.</span>,<span class="n">1.</span>])
+analytic = <span class="n">2</span>*A.T@(A@x-b)              <span class="c"># [46. 64.]</span>
+num = num_grad(<span class="k">lambda</span> v: np.sum((A@v-b)**<span class="n">2</span>), x)   <span class="c"># [46. 64.]</span></pre>
+    <p>Both give $[46,64]$. Note the $A^\top$: without it the shapes still happen to work for square $A$, but the numbers are wrong — the check catches it.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Compute the Jacobian of $g(\mathbf{x})=[x_0x_1,\ x_0^2+x_1^2]$ by hand at $\mathbf{x}=[1,2]$, and verify numerically.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$J=\begin{bmatrix}\partial(x_0x_1) & \partial(x_0x_1)\\ \partial(x_0^2+x_1^2)&\cdots\end{bmatrix}=\begin{bmatrix}x_1&x_0\\2x_0&2x_1\end{bmatrix}$. At $[1,2]$: $\begin{bmatrix}2&1\\2&4\end{bmatrix}$.</p>
+    <pre class="code">x=np.array([<span class="n">1.</span>,<span class="n">2.</span>]); np.array([[x[<span class="n">1</span>],x[<span class="n">0</span>]],[<span class="n">2</span>*x[<span class="n">0</span>],<span class="n">2</span>*x[<span class="n">1</span>]]])  <span class="c"># [[2,1],[2,4]]</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>With $g$ from E3 and $f(\mathbf{u})=[u_0+u_1,\ u_0u_1]$, verify the chain rule $J_{f\circ g}=J_f\,J_g$ at $\mathbf{x}=[1,2]$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$\mathbf{u}=g([1,2])=[2,5]$, so $J_f=\begin{bmatrix}1&1\\u_1&u_0\end{bmatrix}=\begin{bmatrix}1&1\\5&2\end{bmatrix}$ and $J_g=\begin{bmatrix}2&1\\2&4\end{bmatrix}$. Product $J_fJ_g=\begin{bmatrix}4&5\\14&13\end{bmatrix}$, matching the numeric Jacobian of $f\circ g$.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Derive the normal equations by setting $\nabla\lVert A\mathbf{x}-\mathbf{b}\rVert^2=0$, and solve for the $3\times2$ system $A=\begin{bmatrix}1&1\\1&2\\1&3\end{bmatrix}$, $\mathbf{b}=[1,2,2]$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$2A^\top(A\mathbf{x}-\mathbf{b})=0\Rightarrow A^\top A\,\mathbf{x}=A^\top\mathbf{b}$. Solving:</p>
+    <pre class="code">A=np.array([[<span class="n">1.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">2.</span>],[<span class="n">1.</span>,<span class="n">3.</span>]]); b=np.array([<span class="n">1.</span>,<span class="n">2.</span>,<span class="n">2.</span>])
+np.linalg.solve(A.T@A, A.T@b)     <span class="c"># [0.667 0.5] -> intercept .667, slope .5</span></pre>
+    <p>This is linear regression's closed form — the best-fit line through the three points, obtained purely from matrix calculus. (In practice use <code>lstsq</code> / QR for stability — Session 04.)</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Backprop:</strong> layer gradients are Jacobian-vector products chained right-to-left — this section, industrialized.</li>
+  <li><strong>Linear/ridge regression:</strong> closed forms come straight from $\nabla\lVert A\mathbf{x}-\mathbf{b}\rVert^2=0$.</li>
+  <li><strong>Second-order optimization:</strong> Newton's step needs the Hessian; natural gradient needs the Fisher matrix (Pillar III).</li>
+  <li><strong>Debugging autograd:</strong> the finite-difference check is the standard way to validate a custom layer's backward pass.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · Gradient of $\mathbf{x}^\top A\mathbf{x}$?</div><div class="a">$(A+A^\top)\mathbf{x}$, or $2A\mathbf{x}$ if $A$ is symmetric. The Hessian is $A+A^\top$.</div></div>
+<div class="qa"><div class="q">Q2 · What is the Jacobian, intuitively?</div><div class="a">The matrix of all first partials of a vector map — and the best local linear approximation: $\mathbf{f}(\mathbf{x}_0+\mathbf{d})\approx\mathbf{f}(\mathbf{x}_0)+J\mathbf{d}$.</div></div>
+<div class="qa"><div class="q">Q3 · How does the chain rule become backprop?</div><div class="a">The composition's Jacobian is the product of layer Jacobians; backprop evaluates it right-to-left so each step is a cheap Jacobian-vector product against the scalar loss.</div></div>
+<div class="qa"><div class="q">Q4 · How do you check a hand-derived gradient?</div><div class="a">Central finite differences, $[f(x+he_i)-f(x-he_i)]/2h$ with $h\approx10^{-6}$, compared to the analytic gradient to ~6 digits.</div></div>
+<div class="qa"><div class="q">Q5 · Why is the Hessian symmetric?</div><div class="a">Mixed partials commute for smooth functions (Clairaut/Schwarz), so $H_{ij}=H_{ji}$ — which lets Session 02's PD/saddle analysis apply to it.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Gradient / Jacobian / Hessian shapes</td><td>Keeps every derivation shape-correct</td><td class="freq f-h">High</td></tr>
+  <tr><td>$\nabla(\mathbf{x}^\top A\mathbf{x})=2A\mathbf{x}$</td><td>Quadratic losses, ridge, curvature</td><td class="freq f-h">High</td></tr>
+  <tr><td>$\nabla\lVert A\mathbf{x}-\mathbf{b}\rVert^2=2A^\top(\cdot)$</td><td>Least squares &amp; the normal equations</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Jacobian = local linear map</td><td>Linearization; sensitivity analysis</td><td class="freq f-h">High</td></tr>
+  <tr><td>Chain rule = Jacobian product</td><td>Backpropagation / autodiff</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Finite-difference gradient check</td><td>Debugging custom gradients</td><td class="freq f-m">Medium</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Differentiate the whole vector at once; the chain rule is matrix multiplication.</div>
+  <p><span class="cc-sub">Reusable idea:</span> matrix calculus replaces index-by-index derivatives with a few shape-checked formulas.</p>
+  <ul>
+    <li><strong>Three to memorize:</strong> $\nabla(\mathbf{a}^\top\mathbf{x})=\mathbf{a}$, $\nabla(\mathbf{x}^\top A\mathbf{x})=2A\mathbf{x}$, $\nabla\lVert A\mathbf{x}-\mathbf{b}\rVert^2=2A^\top(A\mathbf{x}-\mathbf{b})$.</li>
+    <li><strong>Jacobian</strong> = best local linear map; <strong>Hessian</strong> = Jacobian of the gradient (symmetric → Session 02's curvature).</li>
+    <li><strong>Chain rule = product of Jacobians</strong>; evaluate right-to-left and you've derived backprop.</li>
+    <li><strong>Always gradient-check</strong> with central finite differences before trusting a hand derivation.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> stop thinking in indices. A gradient has the shape of what you differentiate w.r.t., and composing maps means multiplying their Jacobians — so every gradient in ML, up to and including backprop through a transformer, is this one page applied at scale.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>04 · Factorizations &amp; numerical stability →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">We solved the normal equations with an inverse — which is exactly what you shouldn't do in practice. QR, LU, Cholesky, and the condition number: how real solvers stay accurate in floating point. <em>(Coming next — completes Pillar I.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

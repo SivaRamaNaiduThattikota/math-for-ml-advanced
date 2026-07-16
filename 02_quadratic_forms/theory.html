@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Quadratic Forms & Positive-Definite Matrices · Math for ML · Advanced</title>
+<meta name="description" content="The quadratic form x'Ax turns a matrix into a landscape — bowl, saddle, or valley. Positive-definiteness is the property behind covariance, kernels, and the shape of a loss.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Quadratic Forms & Positive-Definite Matrices · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="02_quadratic_forms">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · The quadratic form</a>
+  <a href="#s2">2 · Definiteness</a>
+  <a href="#s3">3 · Testing it</a>
+  <a href="#s4">4 · Curvature & loss shape</a>
+  <a href="#s5">5 · Ellipses & Mahalanobis</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Linear Algebra · 02</div>
+    <h1>Quadratic Forms &amp; Positive-Definite Matrices</h1>
+    <p class="lede">Feed a matrix a direction and ask "how much energy?" The answer, $\mathbf{x}^\top A\mathbf{x}$, turns the matrix into a landscape — a bowl, a saddle, or a valley. Which one it is decides whether your loss has a minimum and whether your optimizer can find it.</p>
+    <div class="meta"><span>~20 min read</span><span class="dot"></span><span>NumPy/SciPy-verified</span><span class="dot"></span><span>Prereq: Session 01 (eigendecomposition)</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Last session we found the eigenvalues of a symmetric matrix. This session gives those eigenvalues a job. The <strong>quadratic form</strong> $\mathbf{x}^\top A\mathbf{x}$ is the single scalar a symmetric matrix produces from a direction, and its <em>sign</em> — always positive, always negative, or mixed — is what we call <strong>definiteness</strong>. Positive-definiteness turns out to be the exact property that makes covariance matrices valid, kernels usable, and loss functions have a unique minimum. It is the quiet precondition behind half of ML.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Read $\mathbf{x}^\top A\mathbf{x}$ as a landscape and connect its shape to the eigenvalues of $A$.</li>
+    <li>Classify a symmetric matrix as positive-(semi)definite, negative-definite, or indefinite — three equivalent ways.</li>
+    <li>Test definiteness in practice with eigenvalues, Sylvester's criterion, and the Cholesky factorization.</li>
+    <li>Explain why the Hessian's definiteness decides minimum vs saddle, and how its condition number controls optimization speed.</li>
+    <li>Connect PD matrices to covariance ellipses, the Mahalanobis distance, and valid kernels.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Maps to <em>Mathematics for Machine Learning</em> <span class="secs">§3.2 (inner products &amp; symmetric PD matrices), §4.3 (Cholesky)</span>, and Boyd &amp; Vandenberghe, <em>Convex Optimization</em> <span class="secs">Appendix A.5</span>. The definiteness of the Hessian returns everywhere in the optimization pillar.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">The quadratic form $\mathbf{x}^\top A\mathbf{x}$</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">Definiteness = the sign story</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">Testing it: eigenvalues, Sylvester, Cholesky</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Curvature &amp; the shape of a loss</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Ellipses &amp; Mahalanobis distance</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$\mathbf{x}^\top A\mathbf{x}$</span><span class="def">The quadratic form — a scalar built from a symmetric matrix $A$ and a vector $\mathbf{x}$.</span>
+    <span class="sym">$A\succ0$</span><span class="def">Positive definite: $\mathbf{x}^\top A\mathbf{x}>0$ for every $\mathbf{x}\ne\mathbf{0}$ (all $\lambda_i>0$).</span>
+    <span class="sym">$A\succeq0$</span><span class="def">Positive semidefinite: $\mathbf{x}^\top A\mathbf{x}\ge0$ (all $\lambda_i\ge0$).</span>
+    <span class="sym">$\nabla^2 f$</span><span class="def">The Hessian — the matrix of second derivatives; its quadratic form is local curvature.</span>
+    <span class="sym">$\kappa(A)$</span><span class="def">Condition number $\lambda_{\max}/\lambda_{\min}$ (for symmetric PD $A$).</span>
+    <span class="sym">$A=LL^\top$</span><span class="def">Cholesky factorization — the "square root" of a PD matrix, $L$ lower-triangular.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>The quadratic form: a matrix as a landscape</h2>
+
+<p>Given a symmetric matrix $A$, the <strong>quadratic form</strong> is the function</p>
+<div class="mathband">$$ q(\mathbf{x}) = \mathbf{x}^\top A\mathbf{x} = \sum_{i,j} A_{ij}\,x_i x_j. $$</div>
+<p>It eats a vector and returns a single number. Every term is degree-2 in the entries of $\mathbf{x}$ — hence "quadratic." For $A=\begin{bmatrix}2&1\\1&2\end{bmatrix}$, expanding gives $q(\mathbf{x})=2x_1^2+2x_1x_2+2x_2^2$.</p>
+
+<aside class="side"><span class="lbl">Why symmetric, always</span>Only the symmetric part of a matrix survives the form: $\mathbf{x}^\top A\mathbf{x}=\mathbf{x}^\top\!\big(\tfrac{A+A^\top}{2}\big)\mathbf{x}$. So we lose nothing by assuming $A=A^\top$ — and we gain the Spectral Theorem from Session 01.</aside>
+
+<div class="callout c-good"><span class="tag">Verified</span>
+For $A=\begin{bmatrix}2&1\\1&2\end{bmatrix}$: $q([1,0])=2$, $q([1,1])=6$, $q([1,-1])=2$. The direction $[1,1]$ (the $\lambda=3$ eigenvector) yields the most energy; $[1,-1]$ (the $\lambda=1$ eigenvector) the least (E1).</div>
+
+<p>The key move — and the reason Session 01 came first — is to view $q$ <em>in the eigenbasis</em>. Write $A=Q\Lambda Q^\top$ and substitute $\mathbf{y}=Q^\top\mathbf{x}$ (the coordinates of $\mathbf{x}$ in the eigen-frame):</p>
+<div class="mathband">$$ \mathbf{x}^\top A\mathbf{x} = \mathbf{x}^\top Q\Lambda Q^\top\mathbf{x} = \mathbf{y}^\top\Lambda\mathbf{y} = \sum_i \lambda_i\, y_i^2. $$</div>
+<p>The cross-terms vanish. In the right coordinates the landscape is just <strong>a weighted sum of squares, weighted by the eigenvalues</strong>. That one identity is the whole session: the shape of $q$ is dictated entirely by the <em>signs</em> of the $\lambda_i$.</p>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="qform" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">symmetric A =</span>
+      <span>[ <span class="va" id="rA11">2.0</span> , <span class="vs" id="rA12">0.0</span> ; <span class="vs" id="rA12b">0.0</span> , <span class="vb" id="rA22">1.0</span> ]</span></div>
+    <div class="slider-row"><span>a₁₁</span><input type="range" id="sA11" min="-3" max="3" step="0.1" value="2"><span>a₂₂</span><input type="range" id="sA22" min="-3" max="3" step="0.1" value="1"><span>a₁₂</span><input type="range" id="sA12" min="-3" max="3" step="0.1" value="0"></div>
+    <div class="readout">
+      <span><span class="k">λ₁,λ₂</span> = <span class="vd" id="rEig">2.00, 1.00</span></span>
+      <span><span class="k">shape</span> = <span class="va" id="rShape">bowl (PD)</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — The landscape $q(\mathbf{x})=\mathbf{x}^\top A\mathbf{x}$.</strong> Warm = positive, cool = negative, the white curve is $q=0$. Two positive eigenvalues give a <b>bowl</b> (a minimum at the origin); one of each sign gives a <b>saddle</b>; a zero eigenvalue gives a flat-bottomed <b>valley</b>. The arrows are the eigenvectors — the axes along which the landscape is pure squared terms. Drag the sliders and watch the bowl tip into a saddle the instant an eigenvalue crosses zero.</figcaption>
+</figure>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>Definiteness — the sign story</h2>
+
+<p>Since $q(\mathbf{x})=\sum_i\lambda_i y_i^2$ and the $y_i^2$ are always $\ge0$, the sign of $q$ is decided by the eigenvalues. That gives the whole classification at a glance:</p>
+
+<table class="sum">
+  <thead><tr><th>Name</th><th>Condition</th><th>Eigenvalues</th><th>Landscape</th></tr></thead>
+  <tbody>
+  <tr><td>Positive definite $A\succ0$</td><td>$\mathbf{x}^\top A\mathbf{x}>0\ \forall\mathbf{x}\ne0$</td><td>all $\lambda_i>0$</td><td>Bowl — unique minimum</td></tr>
+  <tr><td>Positive semidefinite $A\succeq0$</td><td>$\mathbf{x}^\top A\mathbf{x}\ge0$</td><td>all $\lambda_i\ge0$ (some $=0$)</td><td>Valley — flat directions</td></tr>
+  <tr><td>Indefinite</td><td>both signs occur</td><td>mixed signs</td><td>Saddle — no min or max</td></tr>
+  <tr><td>Negative definite $A\prec0$</td><td>$\mathbf{x}^\top A\mathbf{x}<0$</td><td>all $\lambda_i<0$</td><td>Dome — unique maximum</td></tr>
+  </tbody>
+</table>
+
+<div class="callout c-good"><span class="tag">Verified</span>
+Three symmetric matrices classified by their eigenvalues (E-class): $\begin{bmatrix}2&1\\1&2\end{bmatrix}$ → eig $[1,3]$ → <b>PD</b>; $\begin{bmatrix}0&1\\1&0\end{bmatrix}$ → eig $[-1,1]$ → <b>indefinite (saddle)</b>; $\begin{bmatrix}1&1\\1&1\end{bmatrix}$ → eig $[0,2]$ → <b>PSD</b> (the $\lambda=0$ direction $[1,-1]$ is perfectly flat).</div>
+
+<div class="callout c-anchor"><span class="tag">Why ML cares</span>
+Positive-definiteness is the property that guarantees a <em>unique</em> minimum. A convex quadratic loss has a PD Hessian everywhere, so gradient descent can't get stuck — there's one bowl and it rolls to the bottom. The moment the Hessian goes indefinite, you're at (or near) a <strong>saddle point</strong> — exactly the landscape that traps naive optimizers in deep networks.</div>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>Testing definiteness three ways</h2>
+
+<p>You'll need to <em>check</em> definiteness constantly. There are three standard tests, from most intuitive to most practical.</p>
+
+<h3>1 · Eigenvalues (the definition)</h3>
+<p>Compute $\lambda_i$ with <code>eigvalsh</code> and check their signs. Correct and clear, but for large matrices it's the most expensive option.</p>
+
+<h3>2 · Sylvester's criterion (by hand)</h3>
+<p>$A$ is positive definite $\iff$ every <strong>leading principal minor</strong> (the determinant of the top-left $k\times k$ block) is strictly positive.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For $A=\begin{bmatrix}2&1\\1&2\end{bmatrix}$: $m_1=2>0$ and $m_2=\det A=3>0$, so $A\succ0$ (E3). Fast for $2\times2$/$3\times3$ by hand; impractical for large $A$.</div>
+
+<h3>3 · Cholesky (the practical test)</h3>
+<p>The fastest real-world check: try to factor $A=LL^\top$ with $L$ lower-triangular. This <strong>succeeds if and only if $A$ is positive definite</strong>, and it costs about half a matrix inversion — cheaper than finding eigenvalues.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+$\begin{bmatrix}4&2\\2&3\end{bmatrix}=LL^\top$ with $L=\begin{bmatrix}2&0\\1&1.414\end{bmatrix}$, and $LL^\top$ reproduces $A$ exactly. On the saddle $\begin{bmatrix}0&1\\1&0\end{bmatrix}$, NumPy raises <code>LinAlgError: Matrix is not positive definite</code> (E4/E5) — the factorization failing <em>is</em> the test result.</div>
+
+<aside class="side"><span class="lbl">Bonus: it's a square root</span>Cholesky's $L$ is a matrix "square root" of $A$. That's how you <b>sample a multivariate Gaussian</b>: draw $\mathbf{z}\sim\mathcal N(0,I)$, then $L\mathbf{z}\sim\mathcal N(0,A)$. Returns in the inference pillar.</aside>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Curvature and the shape of a loss</h2>
+
+<p>The Hessian $\nabla^2 f$ collects the second derivatives of a loss. Near a critical point, a second-order Taylor expansion says the loss <em>is</em> a quadratic form in the Hessian:</p>
+<div class="mathband">$$ f(\mathbf{x}_0+\mathbf{d}) \approx f(\mathbf{x}_0) + \nabla f^\top\mathbf{d} + \tfrac12\,\mathbf{d}^\top(\nabla^2 f)\,\mathbf{d}. $$</div>
+<p>So this session <em>is</em> the local geometry of every loss surface. At a critical point ($\nabla f=0$) the Hessian's definiteness classifies it: <strong>PD → minimum, ND → maximum, indefinite → saddle.</strong> This is the multivariate second-derivative test.</p>
+
+<p>The eigenvalues also set the <em>difficulty</em>. The <strong>condition number</strong> $\kappa=\lambda_{\max}/\lambda_{\min}$ measures how stretched the bowl is:</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+$\begin{bmatrix}10&0\\0&0.5\end{bmatrix}$ has $\kappa=10/0.5=20$ (E6): the bowl is 20× steeper along one axis than the other. Gradient descent then <strong>zig-zags</strong> across the narrow valley and crawls — the classic ill-conditioning that momentum, preconditioning, and Adam exist to fix (Pillar II).</div>
+
+<div class="callout c-warn"><span class="tag">Big idea</span>
+A well-conditioned ($\kappa\approx1$) loss is a round bowl — easy. A badly-conditioned one ($\kappa\gg1$) is a long thin ravine — slow. Feature scaling, batch norm, and second-order methods are all, at heart, attempts to lower $\kappa$.</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Covariance ellipses &amp; Mahalanobis distance</h2>
+
+<p>A covariance matrix $\Sigma$ is symmetric PSD (Session 01), so its inverse quadratic form defines a genuine distance — the <strong>Mahalanobis distance</strong>:</p>
+<div class="mathband">$$ d_M(\mathbf{x})^2 = (\mathbf{x}-\boldsymbol\mu)^\top \Sigma^{-1} (\mathbf{x}-\boldsymbol\mu). $$</div>
+<p>It's Euclidean distance <em>after</em> accounting for the data's spread and correlation: directions with high variance count for less, correlated axes are decorrelated. The level sets $d_M=\text{const}$ are exactly the <strong>covariance ellipses</strong> — their axes are $\Sigma$'s eigenvectors, their radii $\propto\sqrt{\lambda_i}$.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+With $\Sigma=\begin{bmatrix}4&1\\1&1\end{bmatrix}$ and $\mathbf{x}=[2,1]$, $\boldsymbol\mu=0$: $d_M^2=1.333$, so $d_M=1.155$ (E7) — noticeably less than the raw Euclidean $\sqrt5=2.24$, because the point sits along a high-variance direction.</div>
+<p>The same PSD structure is why <strong>kernels work</strong>: a valid kernel produces a Gram matrix $K$ that is symmetric PSD, which is precisely the condition for it to correspond to an inner product in some feature space (Mercer's theorem). PD-ness is the license that makes the kernel trick legal.</p>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+
+<span class="k">def</span> <span class="f">classify</span>(A):
+    w = np.linalg.eigvalsh(A)                 <span class="c"># symmetric eigenvalues, ascending</span>
+    <span class="k">if</span> (w &gt; <span class="n">0</span>).all():   <span class="k">return</span> w, <span class="s">"positive definite"</span>
+    <span class="k">if</span> (w &gt;= <span class="n">0</span>).all():  <span class="k">return</span> w, <span class="s">"positive semidefinite"</span>
+    <span class="k">return</span> w, <span class="s">"indefinite (saddle)"</span>
+
+<span class="f">print</span>(classify(np.array([[<span class="n">2.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">2.</span>]])))   <span class="c"># [1 3]  positive definite</span>
+<span class="f">print</span>(classify(np.array([[<span class="n">0.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">0.</span>]])))   <span class="c"># [-1 1] indefinite (saddle)</span>
+
+<span class="c"># Cholesky IS the practical PD test</span>
+L = np.linalg.cholesky([[<span class="n">4.</span>,<span class="n">2.</span>],[<span class="n">2.</span>,<span class="n">3.</span>]])
+<span class="f">print</span>(L)                                       <span class="c"># [[2 0],[1 1.414]]</span>
+
+<span class="c"># condition number = how stretched the bowl is</span>
+w = np.linalg.eigvalsh([[<span class="n">10.</span>,<span class="n">0.</span>],[<span class="n">0.</span>,<span class="n">0.5</span>]])
+<span class="f">print</span>(w.max() / w.min())                       <span class="c"># 20.0</span>
+
+<span class="c"># Mahalanobis distance</span>
+S = np.array([[<span class="n">4.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">1.</span>]]); x = np.array([<span class="n">2.</span>,<span class="n">1.</span>])
+<span class="f">print</span>(x @ np.linalg.inv(S) @ x)                <span class="c"># 1.3333</span></pre>
+<div class="out">(array([1., 3.]), 'positive definite')
+(array([-1.,  1.]), 'indefinite (saddle)')
+[[2.    0.   ]
+ [1.    1.4142]]
+20.0
+1.3333333333333335</div>
+
+<div class="callout c-good"><span class="tag">Practical rule</span>
+To ask "is this matrix PD?", wrap <code>np.linalg.cholesky</code> in a <code>try/except LinAlgError</code>. It's faster than eigenvalues and it's exactly what solvers do internally before trusting a matrix.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="2">
+  <div class="qz">A symmetric matrix has eigenvalues $\{5, 2, -0.1\}$. Its quadratic-form landscape is a…</div>
+  <button class="opt">Bowl with a unique minimum.</button>
+  <button class="opt">Dome with a unique maximum.</button>
+  <button class="opt">Saddle — one direction curves down.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="1">
+  <div class="qz">The fastest practical way to test whether a large matrix is positive definite is…</div>
+  <button class="opt">Full eigendecomposition and inspect every eigenvalue.</button>
+  <button class="opt">Attempt a Cholesky factorization and catch the failure.</button>
+  <button class="opt">Check that all entries are positive.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Only the symmetric part matters:</strong> $\mathbf{x}^\top A\mathbf{x}=\mathbf{x}^\top\tfrac{A+A^\top}{2}\mathbf{x}$, so always symmetrize before testing definiteness.</li>
+  <li><strong>PSD ≠ PD:</strong> a zero eigenvalue means a flat direction — a valley, not a bowl. Regularization ($A+\varepsilon I$) nudges PSD up to PD.</li>
+  <li><strong>"All entries positive" is not PD</strong> and "has a negative entry" is not indefinite. Definiteness is about eigenvalues, not entry signs.</li>
+  <li><strong>Diagonal dominance</strong> (each $|A_{ii}|>\sum_{j\ne i}|A_{ij}|$) with positive diagonal ⇒ PD — a handy sufficient check.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Judging by entries</span>$\begin{bmatrix}1&2\\2&1\end{bmatrix}$ has all-positive entries but eigenvalues $\{-1,3\}$ — it's indefinite. Never eyeball definiteness from the entries.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Inverting a near-singular PD matrix</span>A tiny $\lambda_{\min}$ (huge $\kappa$) makes $\Sigma^{-1}$ explode and Mahalanobis distances meaningless. Add $\varepsilon I$ (ridge / jitter) before inverting.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Assuming a saddle-free loss</span>Deep-net losses are riddled with saddle points (indefinite Hessians). Plain gradient descent stalls there; this is why momentum and adaptive methods matter.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>$\mathbf{x}^\top A\mathbf{x}=\sum_i\lambda_i y_i^2$ in the eigenbasis — <strong>eigenvalue signs decide the shape</strong>.</li>
+  <li>All $\lambda_i>0$ ⇒ <strong>PD</strong> ⇒ bowl ⇒ unique minimum; mixed signs ⇒ saddle.</li>
+  <li>Test PD by <strong>Cholesky</strong> (practical), Sylvester's minors (by hand), or eigenvalues (definitional).</li>
+  <li>A PD <strong>Hessian</strong> means a local minimum; the <strong>condition number</strong> $\kappa=\lambda_{\max}/\lambda_{\min}$ sets how slow descent will be.</li>
+  <li>Covariance &amp; kernel matrices are symmetric PSD — that's what makes Mahalanobis distance and the kernel trick valid.</li>
+  <li>Regularize ($A+\varepsilon I$) to push PSD → PD and tame ill-conditioning.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">By hand where you can, then verify in NumPy.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Expand $q(\mathbf{x})=\mathbf{x}^\top\begin{bmatrix}2&1\\1&2\end{bmatrix}\mathbf{x}$ into a polynomial in $x_1,x_2$, then evaluate at $[1,1]$ and $[1,-1]$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$q=2x_1^2+2x_1x_2+2x_2^2$. At $[1,1]$: $2+2+2=6$. At $[1,-1]$: $2-2+2=2$. Matches the eigen-view: $[1,1]$ is the $\lambda=3$ direction (max energy), $[1,-1]$ the $\lambda=1$ direction (min).</p>
+    <pre class="code">A=np.array([[<span class="n">2.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">2.</span>]])
+[np.array(x)@A@np.array(x) <span class="k">for</span> x <span class="k">in</span> ([<span class="n">1</span>,<span class="n">1</span>],[<span class="n">1</span>,<span class="n">-1</span>])]   <span class="c"># [6.0, 2.0]</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Classify $\begin{bmatrix}1&2\\2&1\end{bmatrix}$ using Sylvester's criterion, then confirm with eigenvalues.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$m_1=1>0$ but $m_2=\det=1-4=-3<0$. Sylvester fails ⇒ not PD. Eigenvalues $\{-1,3\}$ (mixed) ⇒ <strong>indefinite</strong>.</p>
+    <pre class="code">np.linalg.eigvalsh([[<span class="n">1</span>,<span class="n">2</span>],[<span class="n">2</span>,<span class="n">1</span>]])   <span class="c"># [-1. 3.]</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Write an <code>is_pd(A)</code> that returns <code>True</code> iff $A$ is positive definite, using Cholesky (not eigenvalues).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">def</span> <span class="f">is_pd</span>(A):
+    <span class="k">try</span>:
+        np.linalg.cholesky(A)
+        <span class="k">return</span> <span class="k">True</span>
+    <span class="k">except</span> np.linalg.LinAlgError:
+        <span class="k">return</span> <span class="k">False</span>
+
+is_pd([[<span class="n">2</span>,<span class="n">1</span>],[<span class="n">1</span>,<span class="n">2</span>]])   <span class="c"># True</span>
+is_pd([[<span class="n">0</span>,<span class="n">1</span>],[<span class="n">1</span>,<span class="n">0</span>]])   <span class="c"># False</span></pre>
+    <p>Cholesky only completes for PD matrices, so a successful factorization <em>is</em> the proof. Faster than eigenvalues and exactly what numerical libraries do internally.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>A matrix is PSD but not PD. Show how adding $\varepsilon I$ makes it PD, and what that does to the eigenvalues.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">P=np.array([[<span class="n">1.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">1.</span>]])       <span class="c"># eig [0, 2] -> PSD</span>
+np.linalg.eigvalsh(P + <span class="n">1e-3</span>*np.eye(<span class="n">2</span>))    <span class="c"># [0.001, 2.001] -> PD</span></pre>
+    <p>Adding $\varepsilon I$ shifts <em>every</em> eigenvalue up by $\varepsilon$ (since $A+\varepsilon I$ shares $A$'s eigenvectors with eigenvalues $\lambda_i+\varepsilon$). The zero eigenvalue becomes $\varepsilon>0$, so the valley gains a gentle floor and the matrix is now invertible. This is exactly ridge regularization / covariance "jitter."</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Verify that Cholesky is a "square root": generate correlated Gaussian samples by drawing $\mathbf z\sim\mathcal N(0,I)$ and forming $L\mathbf z$, then check the empirical covariance matches the target $\Sigma$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">S = np.array([[<span class="n">4.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">1.</span>]])
+L = np.linalg.cholesky(S)
+rng = np.random.default_rng(<span class="n">0</span>)
+Z = rng.standard_normal((<span class="n">2</span>, <span class="n">100000</span>))
+X = L @ Z                                <span class="c"># each column ~ N(0, S)</span>
+np.cov(X)                                <span class="c"># ~ [[4,1],[1,1]]</span></pre>
+    <p>If $\mathbf z\sim\mathcal N(0,I)$ then $\operatorname{Cov}(L\mathbf z)=L\,I\,L^\top=LL^\top=\Sigma$. Cholesky's $L$ is the matrix that "colours" white noise into the target covariance — the standard way to sample any multivariate Gaussian.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Optimization:</strong> Hessian definiteness = min vs saddle; condition number = convergence speed. The whole of Pillar II builds on this.</li>
+  <li><strong>Gaussians &amp; sampling:</strong> a covariance must be PSD; Cholesky colours white noise into correlated samples.</li>
+  <li><strong>Kernels &amp; GPs:</strong> a valid kernel yields a PSD Gram matrix — the precondition for the kernel trick and Gaussian processes.</li>
+  <li><strong>Anomaly detection:</strong> Mahalanobis distance flags points far from the data ellipse, accounting for correlation.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What does positive-definite mean, three ways?</div><div class="a">(1) $\mathbf{x}^\top A\mathbf{x}>0$ for all $\mathbf{x}\ne0$; (2) all eigenvalues $>0$; (3) all leading principal minors $>0$ / a Cholesky factorization exists. All equivalent for symmetric $A$.</div></div>
+<div class="qa"><div class="q">Q2 · Why must a covariance matrix be PSD?</div><div class="a">$\mathbf{u}^\top\Sigma\mathbf{u}$ is the variance of the data projected onto $\mathbf{u}$, and variance can't be negative — so the quadratic form is $\ge0$ for every direction, i.e. PSD.</div></div>
+<div class="qa"><div class="q">Q3 · How does the Hessian tell a minimum from a saddle?</div><div class="a">At a critical point, PD Hessian ⇒ local minimum, ND ⇒ maximum, indefinite ⇒ saddle. It's the multivariate second-derivative test — the local quadratic form.</div></div>
+<div class="qa"><div class="q">Q4 · What is the condition number and why do we care?</div><div class="a">$\kappa=\lambda_{\max}/\lambda_{\min}$. Large $\kappa$ = a long thin bowl = gradient descent zig-zags and converges slowly, and inverses are numerically unstable. Scaling/preconditioning lowers it.</div></div>
+<div class="qa"><div class="q">Q5 · Fastest way to check PD in code?</div><div class="a">Attempt <code>np.linalg.cholesky</code> and catch <code>LinAlgError</code> — it succeeds iff PD and is cheaper than eigenvalues.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Quadratic form $\mathbf{x}^\top A\mathbf{x}$</td><td>Turns a matrix into a landscape</td><td class="freq f-h">High</td></tr>
+  <tr><td>$=\sum\lambda_i y_i^2$ in eigenbasis</td><td>Eigenvalue signs decide the shape</td><td class="freq f-h">High</td></tr>
+  <tr><td>PD / PSD / indefinite</td><td>Bowl vs valley vs saddle; min existence</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Cholesky $A=LL^\top$</td><td>Fast PD test; Gaussian sampling</td><td class="freq f-h">High</td></tr>
+  <tr><td>Hessian definiteness</td><td>Min vs saddle in optimization</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Condition number $\kappa$</td><td>Convergence speed &amp; numerical stability</td><td class="freq f-h">High</td></tr>
+  <tr><td>Mahalanobis distance</td><td>Correlation-aware distance; anomaly detection</td><td class="freq f-m">Medium</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">A matrix is a landscape; its eigenvalue signs are the terrain.</div>
+  <p><span class="cc-sub">Reusable idea:</span> the quadratic form $\mathbf{x}^\top A\mathbf{x}=\sum_i\lambda_i y_i^2$ collapses a matrix to a shape you can see:</p>
+  <ul>
+    <li><strong>All $\lambda_i>0$ (PD)</strong> → bowl → unique minimum; <strong>mixed signs</strong> → saddle; <strong>a zero</strong> → flat valley.</li>
+    <li><strong>Test PD fast</strong> with Cholesky ($A=LL^\top$ succeeds iff PD); by hand use Sylvester's minors.</li>
+    <li>The <strong>Hessian</strong> is this landscape locally: PD ⇒ minimum, indefinite ⇒ saddle; the <strong>condition number</strong> $\kappa=\lambda_{\max}/\lambda_{\min}$ is how slow descent will be.</li>
+    <li><strong>Covariance &amp; kernels are PSD</strong> — that's what makes Mahalanobis distance and the kernel trick legitimate.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> "positive definite" is just "genuinely bowl-shaped." It's the property that guarantees a unique minimum, a valid covariance, and a usable kernel — so half of ML is quietly checking, or engineering, positive-definiteness.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>03 · Matrix calculus — Jacobians &amp; Hessians →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">We've been differentiating the loss in our heads; now we do it properly. How to differentiate vector- and matrix-valued expressions without drowning in indices — the machinery that makes backprop a few clean lines. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

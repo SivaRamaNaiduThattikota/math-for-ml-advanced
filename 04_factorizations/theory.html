@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Factorizations & Numerical Stability · Math for ML · Advanced</title>
+<meta name="description" content="QR, LU, and Cholesky — how real solvers avoid the matrix inverse — plus the condition number, why normal equations are dangerous, and how many digits floating point costs you.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Factorizations & Numerical Stability · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="04_factorizations">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Never invert a matrix</a>
+  <a href="#s2">2 · LU, QR, Cholesky</a>
+  <a href="#s3">3 · The condition number</a>
+  <a href="#s4">4 · Why normal equations hurt</a>
+  <a href="#s5">5 · Floating point & digits lost</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Linear Algebra · 04</div>
+    <h1>Factorizations &amp; Numerical Stability</h1>
+    <p class="lede">The math says "$\mathbf{x}=A^{-1}\mathbf{b}$." The computer says "please don't." How real solvers factor a matrix instead of inverting it, and how the condition number quietly decides how many digits of your answer are even real.</p>
+    <div class="meta"><span>~20 min read</span><span class="dot"></span><span>NumPy/SciPy-verified</span><span class="dot"></span><span>Prereq: Sessions 01–03</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Last session we "solved" least squares with $\mathbf{x}=(A^\top A)^{-1}A^\top\mathbf{b}$. That formula is correct on paper and reckless in floating point. This session is the numerical-linear-algebra reality check that separates textbook math from code that survives real data: solvers <strong>factor</strong> matrices ($LU$, $QR$, Cholesky) rather than invert them, and the <strong>condition number</strong> tells you, in advance, how much your errors will be amplified. It closes Pillar I by making everything from Sessions 01–03 numerically honest.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Explain why you solve $A\mathbf{x}=\mathbf{b}$ by factorization, never by forming $A^{-1}$.</li>
+    <li>Pick the right factorization — $LU$ (general), $QR$ (least squares), Cholesky (PD) — and say why.</li>
+    <li>Define the <strong>condition number</strong> and use "digits lost $\approx\log_{10}\kappa$" as a working rule.</li>
+    <li>Explain why the normal equations square $\kappa$, and reach for $QR$/SVD instead.</li>
+    <li>Reason about machine epsilon and spot ill-conditioning (the Hilbert-matrix trap) before it corrupts a result.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Maps to <em>Mathematics for Machine Learning</em> <span class="secs">§2.3 (solving linear systems), §4.3 (Cholesky)</span>, and Trefethen &amp; Bau, <em>Numerical Linear Algebra</em> (Lectures 10, 16, 18) for the definitive treatment.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Never invert a matrix</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">LU, QR &amp; Cholesky</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">The condition number</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Why normal equations hurt</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Floating point &amp; digits lost</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$A=LU$</span><span class="def">LU factorization — lower × upper triangular (with row pivoting, $PA=LU$).</span>
+    <span class="sym">$A=QR$</span><span class="def">QR — orthonormal $Q$ ($Q^\top Q=I$) × upper-triangular $R$.</span>
+    <span class="sym">$A=LL^\top$</span><span class="def">Cholesky — for symmetric positive-definite $A$ (Session 02).</span>
+    <span class="sym">$\kappa(A)$</span><span class="def">Condition number $=\sigma_{\max}/\sigma_{\min}$ (singular values); $\ge1$, larger = worse.</span>
+    <span class="sym">$\varepsilon_{\text{mach}}$</span><span class="def">Machine epsilon, $\approx2.2\times10^{-16}$ for float64 — the relative gap between representable numbers.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Never invert a matrix (to solve a system)</h2>
+<p>To solve $A\mathbf{x}=\mathbf{b}$, the instinct is $\mathbf{x}=A^{-1}\mathbf{b}$. In practice you almost never form $A^{-1}$, for three reasons:</p>
+<ul>
+  <li><strong>It's wasteful.</strong> Computing a full inverse costs about 3× more than solving the system directly, and you usually don't need the other columns.</li>
+  <li><strong>It's less accurate.</strong> Forming and then multiplying by $A^{-1}$ accumulates more rounding error than a direct solve.</li>
+  <li><strong>It hides structure.</strong> A triangular or PD matrix has a fast, stable solve path; the inverse throws that away.</li>
+</ul>
+<p>Instead, <strong>factor once, then solve by back-substitution.</strong> Every practical solver does this: replace $A$ with a product of easy-to-solve pieces (triangular or orthogonal), then peel them off one at a time.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Solving the ill-conditioned Hilbert-$8$ system $H\mathbf{x}=\mathbf{b}$ with known answer $\mathbf{x}=\mathbf{1}$: <code>np.linalg.solve</code> gives error $1.9\times10^{-7}$, while <code>inv(H)@b</code> gives $1.4\times10^{-6}$ — about 7× worse (E-inv). Same math, different numerics.</div>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>Three factorizations, three jobs</h2>
+
+<h3>LU — the general workhorse</h3>
+<p>For a general square $A$, Gaussian elimination <em>is</em> the factorization $PA=LU$ ($P$ a row-permutation for pivoting). Then $A\mathbf{x}=\mathbf{b}$ becomes two triangular solves: $L\mathbf{y}=P\mathbf{b}$, then $U\mathbf{x}=\mathbf{y}$. This is what <code>np.linalg.solve</code> uses.</p>
+
+<h3>QR — for least squares</h3>
+<p>Write $A=QR$ with $Q$ orthonormal and $R$ upper-triangular. For the least-squares problem $\min\lVert A\mathbf{x}-\mathbf{b}\rVert$, substitute and use $Q^\top Q=I$: the problem reduces to the triangular solve $R\mathbf{x}=Q^\top\mathbf{b}$ — <em>without ever forming $A^\top A$</em>.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For $A=\begin{bmatrix}1&1\\1&2\\1&3\end{bmatrix}$, QR gives orthonormal $Q$ ($Q^\top Q=I$) and $R=\begin{bmatrix}-1.732&-3.464\\0&-1.414\end{bmatrix}$; solving $R\mathbf{x}=Q^\top\mathbf{b}$ yields $\mathbf{x}=[0.667,0.5]$ — identical to <code>lstsq</code> (E1/E2), but numerically far safer than the normal equations.</div>
+
+<h3>Cholesky — for symmetric positive-definite</h3>
+<p>When $A\succ0$ (Session 02), $A=LL^\top$ is the cheapest factorization of all — about half the cost of LU — and doubles as the PD test. Use it for covariance solves, kernel systems, and Gaussian sampling.</p>
+
+<table class="sum">
+  <thead><tr><th>Factorization</th><th>Use when</th><th>Cost (n×n)</th></tr></thead>
+  <tbody>
+  <tr><td>LU (with pivoting)</td><td>general square solve</td><td>$\tfrac23 n^3$</td></tr>
+  <tr><td>QR</td><td>least squares / tall matrices</td><td>$\sim2n^3$ (or $2mn^2$)</td></tr>
+  <tr><td>Cholesky</td><td>symmetric positive-definite</td><td>$\tfrac13 n^3$</td></tr>
+  </tbody>
+</table>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>The condition number — how much error gets amplified</h2>
+<p>The <strong>condition number</strong> measures how much a relative error in the input can be magnified in the output:</p>
+<div class="mathband">$$ \kappa(A) = \frac{\sigma_{\max}}{\sigma_{\min}}, \qquad \frac{\lVert\Delta\mathbf{x}\rVert}{\lVert\mathbf{x}\rVert} \;\lesssim\; \kappa(A)\,\frac{\lVert\Delta\mathbf{b}\rVert}{\lVert\mathbf{b}\rVert}. $$</div>
+<p>Geometrically (Session 01), $A$ maps the unit circle to an ellipse; $\kappa$ is the ratio of its longest to shortest axis. A near-circular map ($\kappa\approx1$) is <strong>well-conditioned</strong>; a pancake-flat one ($\kappa\gg1$) is <strong>ill-conditioned</strong> — solving it divides by the tiny short axis, blowing up any error.</p>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="condplay" width="880" height="470"></canvas>
+    <div class="slider-row"><span>σ_max</span><input type="range" id="sSmax" min="0.5" max="4" step="0.05" value="2.4"><span>σ_min</span><input type="range" id="sSmin" min="0.03" max="2" step="0.01" value="1.0"></div>
+    <div class="readout">
+      <span><span class="k">κ = σ_max/σ_min</span> = <span class="va" id="rKappa">2.40</span></span>
+      <span><span class="k">digits lost ≈ log₁₀κ</span> = <span class="vs" id="rDigits">0.4</span></span>
+      <span><span class="k">status</span> = <span class="vd" id="rStat">well-conditioned</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Conditioning is the shape of the ellipse.</strong> $A$ sends the faint unit circle to the filled ellipse; the condition number is its axis ratio $\sigma_{\max}/\sigma_{\min}$. Shrink $\sigma_{\min}$ and the ellipse flattens toward a line — the matrix nears singular, $\kappa$ explodes, and "digits lost $\approx\log_{10}\kappa$" climbs. A flat ellipse means: tiny wiggles in $\mathbf{b}$ become huge swings in $\mathbf{x}$.</figcaption>
+</figure>
+
+<div class="callout c-warn"><span class="tag">The working rule</span>
+You lose about $\log_{10}\kappa$ significant digits. With float64 (~16 digits), $\kappa=10^{10}$ leaves only ~6 trustworthy digits; $\kappa=10^{16}$ leaves <em>none</em> — the matrix is numerically singular.</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Why the normal equations hurt</h2>
+<p>Solving least squares via $\mathbf{x}=(A^\top A)^{-1}A^\top\mathbf{b}$ has a hidden cost: <strong>forming $A^\top A$ squares the condition number.</strong></p>
+<div class="mathband">$$ \kappa(A^\top A) = \kappa(A)^2. $$</div>
+<div class="callout c-good"><span class="tag">Verified</span>
+For $A=\begin{bmatrix}1&1\\1&1.001\end{bmatrix}$: $\kappa(A)\approx4002$, but $\kappa(A^\top A)\approx1.6\times10^{7}=\kappa(A)^2$ (E3). You just doubled the digits you'll lose — for free, and for the worse.</div>
+<p>So even though the normal equations are the tidy closed form from Session 03, in code you solve least squares with <strong>QR</strong> (or SVD for the nastiest cases). <code>np.linalg.lstsq</code> does this for you — it never forms $A^\top A$. Reserve the normal equations for derivation and small, well-conditioned problems.</p>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Floating point &amp; the digits you actually have</h2>
+<p>float64 stores ~16 significant decimal digits; the relative gap between representable numbers is <strong>machine epsilon</strong> $\varepsilon_{\text{mach}}\approx2.2\times10^{-16}$. Every operation can nudge a result by about that much, and those nudges get amplified by $\kappa$. The classic cautionary tale is the <strong>Hilbert matrix</strong> $H_{ij}=1/(i+j-1)$, which looks innocent but is savagely ill-conditioned:</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+$\kappa(H_4)\approx1.6\times10^{4}$, $\kappa(H_6)\approx1.5\times10^{7}$, $\kappa(H_8)\approx1.5\times10^{10}$ (E4). By $H_8$ you've already lost ~10 of your 16 digits — before you even choose a solver.</div>
+<div class="callout c-anchor"><span class="tag">The ML connection</span>
+Ill-conditioning is not exotic — it's <em>everywhere</em> in ML. Correlated features make $A^\top A$ near-singular (multicollinearity); a stretched loss (large $\kappa$ Hessian, Session 02) makes gradient descent crawl. The fixes are the same idea: <strong>regularization</strong> ($A^\top A+\lambda I$ lifts $\sigma_{\min}$), feature scaling, and stable factorizations.</div>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+
+<span class="c"># QR-based least squares — the right way (never forms A^T A)</span>
+A = np.array([[<span class="n">1.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">2.</span>],[<span class="n">1.</span>,<span class="n">3.</span>]]); b = np.array([<span class="n">1.</span>,<span class="n">2.</span>,<span class="n">2.</span>])
+Q, R = np.linalg.qr(A)
+x = np.linalg.solve(R, Q.T @ b)
+<span class="f">print</span>(x)                                <span class="c"># [0.667 0.5]</span>
+<span class="f">print</span>(np.allclose(x, np.linalg.lstsq(A,b,rcond=<span class="k">None</span>)[<span class="n">0</span>]))   <span class="c"># True</span>
+
+<span class="c"># normal equations SQUARE the condition number</span>
+M = np.array([[<span class="n">1.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">1.001</span>]])
+<span class="f">print</span>(np.linalg.cond(M), np.linalg.cond(M.T@M))   <span class="c"># 4002, 1.6e7 (= 4002^2)</span>
+
+<span class="c"># solve beats inv on ill-conditioned systems</span>
+H = np.array([[<span class="n">1</span>/(i+j+<span class="n">1</span>) <span class="k">for</span> j <span class="k">in</span> <span class="f">range</span>(<span class="n">8</span>)] <span class="k">for</span> i <span class="k">in</span> <span class="f">range</span>(<span class="n">8</span>)])
+xt = np.ones(<span class="n">8</span>); bb = H @ xt
+<span class="f">print</span>(np.linalg.norm(np.linalg.solve(H,bb) - xt))   <span class="c"># 1.9e-07</span>
+<span class="f">print</span>(np.linalg.norm(np.linalg.inv(H)@bb   - xt))   <span class="c"># 1.4e-06  (worse)</span></pre>
+<div class="out">[0.6667 0.5   ]
+True
+4002.0009997837 16016010.667
+1.9073830647724366e-07
+1.3709109077253594e-06</div>
+
+<div class="callout c-good"><span class="tag">Practical defaults</span>
+Solve systems with <code>np.linalg.solve</code> (LU), least squares with <code>np.linalg.lstsq</code> (QR/SVD), PD systems with <code>scipy.linalg.cho_solve</code> (Cholesky). Check <code>np.linalg.cond(A)</code> when results look off — if it's near $10^{16}$, your matrix is effectively singular.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">A matrix has $\kappa\approx10^{12}$. In float64 (~16 digits), roughly how many digits of your solution can you trust?</div>
+  <button class="opt">All 16 — float64 is exact.</button>
+  <button class="opt">About 4 (you lose ~$\log_{10}\kappa=12$).</button>
+  <button class="opt">Exactly 12.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">To fit a least-squares model with mildly correlated features, you should…</div>
+  <button class="opt">Form $A^\top A$ and invert it — it's the textbook formula.</button>
+  <button class="opt">Use QR (via <code>lstsq</code>), because forming $A^\top A$ squares the condition number.</button>
+  <button class="opt">Always compute the full matrix inverse first.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Pivoting matters:</strong> LU without row pivoting can fail or lose accuracy; always use the pivoted version (NumPy/LAPACK do by default).</li>
+  <li><strong>Cholesky needs strict PD:</strong> a merely PSD (singular) matrix makes it fail — add jitter $\varepsilon I$ first (Session 02).</li>
+  <li><strong>$\kappa$ uses singular values,</strong> not eigenvalues, in general; they coincide only for symmetric PD matrices.</li>
+  <li><strong>Rank-deficient least squares:</strong> $A^\top A$ is singular; use SVD-based <code>lstsq</code>, which returns the minimum-norm solution.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Calling <code>inv</code> to solve a system</span>Almost always wrong: slower and less accurate. Use <code>solve</code> / <code>lstsq</code> / <code>cho_solve</code>. If you catch yourself typing <code>inv(A)@b</code>, stop.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Normal equations on correlated features</span>$A^\top A$ squares $\kappa$; with multicollinearity it becomes numerically singular. Use QR, or ridge ($+\lambda I$) to lift $\sigma_{\min}$.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Trusting all 16 digits</span>A clean-looking float64 answer from a $\kappa=10^{12}$ matrix has ~4 real digits. Always sanity-check <code>cond(A)</code> on suspicious results.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li><strong>Factor, don't invert:</strong> solve $A\mathbf{x}=\mathbf{b}$ via $LU$/$QR$/Cholesky, never $A^{-1}\mathbf{b}$.</li>
+  <li>LU for general, <strong>QR for least squares</strong>, Cholesky for PD (cheapest).</li>
+  <li>$\kappa(A)=\sigma_{\max}/\sigma_{\min}$; you lose about <strong>$\log_{10}\kappa$ digits</strong>.</li>
+  <li>Normal equations <strong>square $\kappa$</strong> — prefer QR/SVD (<code>lstsq</code>) in code.</li>
+  <li>Ill-conditioning is common in ML; fix with <strong>regularization</strong>, scaling, and stable solvers.</li>
+  <li>float64 gives ~16 digits ($\varepsilon_{\text{mach}}\approx2.2\times10^{-16}$); check <code>cond</code> when in doubt.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Run each and compare methods; the numbers tell the story.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>QR-factor $A=\begin{bmatrix}1&1\\1&2\\1&3\end{bmatrix}$ and verify $Q^\top Q=I$ and $QR=A$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">A=np.array([[<span class="n">1.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">2.</span>],[<span class="n">1.</span>,<span class="n">3.</span>]])
+Q,R=np.linalg.qr(A)
+np.allclose(Q.T@Q, np.eye(<span class="n">2</span>)), np.allclose(Q@R, A)   <span class="c"># (True, True)</span></pre>
+    <p>$Q$ has orthonormal columns; $R$ is upper-triangular $\begin{bmatrix}-1.732&-3.464\\0&-1.414\end{bmatrix}$ (signs are convention-dependent).</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Solve the least-squares problem for that $A$ and $\mathbf{b}=[1,2,2]$ via $R\mathbf{x}=Q^\top\mathbf{b}$, and confirm it matches <code>lstsq</code>.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">b=np.array([<span class="n">1.</span>,<span class="n">2.</span>,<span class="n">2.</span>])
+x=np.linalg.solve(R, Q.T@b)                    <span class="c"># [0.667 0.5]</span>
+np.allclose(x, np.linalg.lstsq(A,b,rcond=<span class="k">None</span>)[<span class="n">0</span>])   <span class="c"># True</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Empirically confirm $\kappa(A^\top A)=\kappa(A)^2$ on $A=\begin{bmatrix}1&1\\1&1.001\end{bmatrix}$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">M=np.array([[<span class="n">1.</span>,<span class="n">1.</span>],[<span class="n">1.</span>,<span class="n">1.001</span>]])
+kA=np.linalg.cond(M); kAtA=np.linalg.cond(M.T@M)
+kA, kAtA, kAtA/kA**<span class="n">2</span>       <span class="c"># 4002, 1.6e7, ~1.0</span></pre>
+    <p>The ratio $\kappa(A^\top A)/\kappa(A)^2\approx1$: forming $A^\top A$ exactly squared the conditioning — the reason to prefer QR.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Tabulate $\kappa(H_n)$ for the Hilbert matrix at $n=4,6,8$ and estimate how many digits you'd lose at $n=8$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">def</span> <span class="f">hilbert</span>(n): <span class="k">return</span> np.array([[<span class="n">1</span>/(i+j+<span class="n">1</span>) <span class="k">for</span> j <span class="k">in</span> <span class="f">range</span>(n)] <span class="k">for</span> i <span class="k">in</span> <span class="f">range</span>(n)])
+[<span class="f">float</span>(np.linalg.cond(hilbert(n))) <span class="k">for</span> n <span class="k">in</span> (<span class="n">4</span>,<span class="n">6</span>,<span class="n">8</span>)]
+<span class="c"># [1.55e4, 1.50e7, 1.53e10]</span></pre>
+    <p>At $n=8$, $\log_{10}(1.5\times10^{10})\approx10.2$ — you lose ~10 of 16 digits, leaving ~6 trustworthy ones.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>On $H_8\mathbf{x}=\mathbf{b}$ with true $\mathbf{x}=\mathbf{1}$, compare the error from <code>solve</code> vs <code>inv(H)@b</code>, then show ridge ($H+\lambda I$) trades bias for stability.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">H=hilbert(<span class="n">8</span>); xt=np.ones(<span class="n">8</span>); b=H@xt
+np.linalg.norm(np.linalg.solve(H,b)-xt)     <span class="c"># 1.9e-7</span>
+np.linalg.norm(np.linalg.inv(H)@b-xt)       <span class="c"># 1.4e-6  (worse)</span>
+lam=<span class="n">1e-8</span>
+xr=np.linalg.solve(H+lam*np.eye(<span class="n">8</span>), b)
+np.linalg.cond(H+lam*np.eye(<span class="n">8</span>)) &lt; np.linalg.cond(H)   <span class="c"># True</span></pre>
+    <p><code>solve</code> beats <code>inv</code>; adding $\lambda I$ lifts $\sigma_{\min}$, cutting $\kappa$ and stabilizing the solve at the cost of a small bias — exactly ridge regression's bargain.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Linear/ridge regression:</strong> solved by QR/SVD, not the normal-equation inverse; ridge = lifting $\sigma_{\min}$.</li>
+  <li><strong>Gaussian processes &amp; kernels:</strong> Cholesky of the (jittered) kernel matrix is the computational core.</li>
+  <li><strong>Optimization:</strong> the Hessian's condition number sets convergence speed (Session 02); preconditioning lowers it.</li>
+  <li><strong>Everywhere numerics bite:</strong> multicollinearity, exploding/vanishing signals, "why does my closed-form disagree with sklearn?" — all conditioning.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · Why not just compute $A^{-1}$ to solve $A\mathbf{x}=\mathbf{b}$?</div><div class="a">Slower (~3×) and less accurate than a direct factorized solve, and it discards exploitable structure. Use LU/QR/Cholesky solves instead.</div></div>
+<div class="qa"><div class="q">Q2 · What is the condition number and the rule of thumb?</div><div class="a">$\kappa=\sigma_{\max}/\sigma_{\min}$; it bounds how much relative input error is amplified. You lose about $\log_{10}\kappa$ significant digits.</div></div>
+<div class="qa"><div class="q">Q3 · Why avoid the normal equations for least squares?</div><div class="a">Forming $A^\top A$ squares the condition number, doubling digits lost. QR (or SVD) solves least squares without ever forming $A^\top A$.</div></div>
+<div class="qa"><div class="q">Q4 · When do you use Cholesky vs QR vs LU?</div><div class="a">Cholesky for symmetric PD (cheapest), QR for least squares / tall systems, LU for general square solves.</div></div>
+<div class="qa"><div class="q">Q5 · How does regularization help numerically?</div><div class="a">Adding $\lambda I$ raises every singular value by $\lambda$, lifting $\sigma_{\min}$ and shrinking $\kappa$ — trading a little bias for a lot of stability.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Factor, don't invert</td><td>Faster, more accurate solves</td><td class="freq f-h">High</td></tr>
+  <tr><td>LU / QR / Cholesky</td><td>Right tool per matrix type</td><td class="freq f-h">High</td></tr>
+  <tr><td>Condition number $\kappa$</td><td>Predicts error amplification &amp; digits lost</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>$\kappa(A^\top A)=\kappa(A)^2$</td><td>Why to avoid normal equations</td><td class="freq f-h">High</td></tr>
+  <tr><td>Machine epsilon / Hilbert</td><td>Limits of float64; spotting ill-conditioning</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>Regularization for stability</td><td>Ridge lifts $\sigma_{\min}$, tames $\kappa$</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Factor, don't invert — and let the condition number tell you the truth.</div>
+  <p><span class="cc-sub">Reusable idea:</span> real linear algebra is about stable <em>solves</em>, and about knowing how much to trust the answer.</p>
+  <ul>
+    <li><strong>Solve by factorization:</strong> LU (general), <strong>QR (least squares)</strong>, Cholesky (PD) — never form $A^{-1}$.</li>
+    <li><strong>$\kappa=\sigma_{\max}/\sigma_{\min}$</strong> is the ellipse's axis ratio; you lose ~$\log_{10}\kappa$ digits.</li>
+    <li><strong>Normal equations square $\kappa$</strong> — that's why <code>lstsq</code> (QR/SVD) beats $(A^\top A)^{-1}A^\top\mathbf{b}$.</li>
+    <li><strong>Regularization</strong> ($+\lambda I$) lifts $\sigma_{\min}$ and stabilizes everything — the numerical face of ridge.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> the closed forms from Sessions 01–03 are correct math, but the computer adds a second question — <em>how many digits are real?</em> The condition number answers it, and choosing a factorization over an inverse is how you keep those digits. This is where linear-algebra theory becomes code that survives real data.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Pillar complete →</span>
+  <h3>Pillar II · Convex Optimization</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">You now have the spectral structure, curvature, derivatives, and numerics of matrices. Next we put them to work: convex sets and functions, and the property that turns "search" into "guaranteed to find the global minimum." <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>
