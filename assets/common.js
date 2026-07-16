@@ -31,6 +31,7 @@
       <a class="brand" href="${BASE}index.html">◆ Math for ML <span style="opacity:.6;font-weight:400">· Advanced</span></a>
       <div class="navright">
         ${curLabel}
+        <button class="ddbtn" id="searchBtn" aria-label="Search lessons" title="Search lessons (press / or ⌘K)">🔍 Search</button>
         <div class="dd">
           <button class="ddbtn" id="ddBtn" aria-haspopup="true" aria-expanded="false">Sessions ▾</button>
           <div class="ddpanel" id="ddPanel" role="menu">${items}</div>
@@ -42,8 +43,75 @@
     btn.addEventListener("click", e => { e.stopPropagation();
       const open = panel.classList.toggle("open"); btn.setAttribute("aria-expanded", open); });
     document.addEventListener("click", () => { panel.classList.remove("open"); btn.setAttribute("aria-expanded","false"); });
+    const sbtn = nav.querySelector("#searchBtn");
+    if (sbtn) sbtn.addEventListener("click", () => { if (window.MFML_openSearch) window.MFML_openSearch(); });
   }
   buildNav();
+
+  // ── command palette: search lessons (button, ⌘K, or /) ──────────────────
+  function buildSearch(){
+    const st = document.createElement("style");
+    st.textContent = `
+      #mfml-cmdk{position:fixed; inset:0; z-index:120; display:none; align-items:flex-start; justify-content:center;
+        background:rgba(20,18,25,.42); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); padding-top:12vh;}
+      #mfml-cmdk.open{display:flex;}
+      #mfml-cmdk .box{width:min(560px,92vw); background:color-mix(in srgb,var(--card) 92%,transparent);
+        -webkit-backdrop-filter:blur(20px) saturate(180%); backdrop-filter:blur(20px) saturate(180%);
+        border:1px solid var(--rule-strong); border-radius:16px; overflow:hidden;
+        box-shadow:0 30px 80px rgba(20,18,25,.4), inset 0 1px 0 rgba(255,255,255,.5);}
+      #mfml-cmdk input{width:100%; border:0; background:transparent; color:var(--ink-strong);
+        font-family:'Inter',system-ui,sans-serif; font-size:1.05rem; padding:16px 18px; outline:none; border-bottom:1px solid var(--rule);}
+      #mfml-cmdk .res{max-height:56vh; overflow-y:auto; padding:6px;}
+      #mfml-cmdk .cmit{display:flex; align-items:center; gap:12px; padding:9px 12px; border-radius:9px; cursor:pointer; text-decoration:none; color:var(--ink); border:0;}
+      #mfml-cmdk .cmit .n{font-family:'JetBrains Mono',monospace; font-size:.72rem; color:var(--accent); background:var(--accent-soft); border-radius:6px; padding:3px 7px; min-width:34px; text-align:center;}
+      #mfml-cmdk .cmit .t{flex:1; font-size:.95rem;}
+      #mfml-cmdk .cmit .g{font-family:'JetBrains Mono',monospace; font-size:.6rem; color:var(--faint); text-transform:uppercase; letter-spacing:.06em;}
+      #mfml-cmdk .cmit.sel, #mfml-cmdk .cmit:hover{background:var(--accent-soft);}
+      #mfml-cmdk .cmit.soon{opacity:.5;}
+      #mfml-cmdk .empty{padding:22px; text-align:center; color:var(--faint); font-size:.92rem;}
+      #mfml-cmdk mark{background:color-mix(in srgb,var(--accent) 30%,transparent); color:inherit; border-radius:3px; padding:0 1px;}
+    `;
+    document.head.appendChild(st);
+    const overlay = document.createElement("div"); overlay.id = "mfml-cmdk";
+    overlay.innerHTML = '<div class="box"><input type="text" placeholder="Search lessons…" aria-label="Search lessons" autocomplete="off" spellcheck="false"><div class="res"></div></div>';
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector("input"), res = overlay.querySelector(".res");
+    let filtered = [], sel = 0;
+    const escp = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    function hl(t,q){ if(!q) return escp(t); const i=t.toLowerCase().indexOf(q); if(i<0) return escp(t);
+      return escp(t.slice(0,i))+"<mark>"+escp(t.slice(i,i+q.length))+"</mark>"+escp(t.slice(i+q.length)); }
+    function render(qraw){
+      const q=qraw.trim().toLowerCase();
+      filtered = SES.filter(s => !q || (s.num+" "+s.title+" "+(GROUPS[s.group]||"")).toLowerCase().includes(q));
+      sel = 0;
+      if(!filtered.length){ res.innerHTML = '<div class="empty">No lessons match “'+escp(qraw)+'”</div>'; return; }
+      res.innerHTML = filtered.map((s,i) => {
+        const cls="cmit"+(s.ready?"":" soon")+(i===0?" sel":"");
+        const inner='<span class="n">'+s.num+'</span><span class="t">'+hl(s.title,q)+(s.ready?"":" · soon")+'</span><span class="g">'+(GROUPS[s.group]||"")+'</span>';
+        return s.ready ? '<a class="'+cls+'" href="'+BASE+s.slug+'/theory.html" data-i="'+i+'">'+inner+'</a>'
+                       : '<div class="'+cls+'" data-i="'+i+'">'+inner+'</div>';
+      }).join("");
+    }
+    function updSel(){ [...res.children].forEach((el,i)=>el.classList.toggle("sel",i===sel));
+      const s=res.children[sel]; if(s&&s.scrollIntoView) s.scrollIntoView({block:"nearest"}); }
+    function openP(){ overlay.classList.add("open"); input.value=""; render(""); setTimeout(()=>input.focus(),0); }
+    function closeP(){ overlay.classList.remove("open"); }
+    input.addEventListener("input", e => render(e.target.value));
+    input.addEventListener("keydown", e => {
+      if(e.key==="ArrowDown"){ e.preventDefault(); sel=Math.min(sel+1,filtered.length-1); updSel(); }
+      else if(e.key==="ArrowUp"){ e.preventDefault(); sel=Math.max(sel-1,0); updSel(); }
+      else if(e.key==="Enter"){ e.preventDefault(); const s=filtered[sel]; if(s&&s.ready) location.href=BASE+s.slug+"/theory.html"; }
+      else if(e.key==="Escape"){ e.preventDefault(); closeP(); }
+    });
+    overlay.addEventListener("click", e => { if(e.target===overlay) closeP(); });
+    window.MFML_openSearch = openP;
+    document.addEventListener("keydown", e => {
+      if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==="k"){ e.preventDefault(); openP(); }
+      else if(e.key==="/" && !overlay.classList.contains("open") && !(e.target.matches&&e.target.matches("input,textarea,select"))){ e.preventDefault(); openP(); }
+      else if(e.key==="Escape" && overlay.classList.contains("open")){ closeP(); }
+    });
+  }
+  buildSearch();
 
   // ── theme cycle: Light → Dark → Glass (persisted, shared key) ────────────
   (function(){
@@ -152,7 +220,7 @@
     if (e.target.matches("input,textarea,select") || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === "t"){ document.getElementById("themeToggle").click(); }
-    else if (e.key === "?"){ alert("Shortcuts\n\nt   toggle theme\nj / k   next / prev section\n← / →   prev / next session\ng / G   top / bottom"); }
+    else if (e.key === "?"){ alert("Shortcuts\n\n/ or ⌘K   search lessons\nt   toggle theme\nj / k   next / prev section\n← / →   prev / next session\ng / G   top / bottom"); }
     else if (cur >= 0 && k === "arrowright" && SES[cur+1] && SES[cur+1].ready){ location.href = BASE+SES[cur+1].slug+"/theory.html"; }
     else if (cur >= 0 && k === "arrowleft"  && SES[cur-1] && SES[cur-1].ready){ location.href = BASE+SES[cur-1].slug+"/theory.html"; }
     else if (e.key === "g"){ scrollTo({top:0, behavior:beh}); }
