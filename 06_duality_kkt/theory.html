@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Lagrangian Duality & KKT · Math for ML · Advanced</title>
+<meta name="description" content="Constraints via Lagrange multipliers, the KKT conditions every optimum obeys, weak and strong duality, and why the SVM lives in the dual.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Lagrangian Duality & KKT · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="06_duality_kkt">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Constrained problems</a>
+  <a href="#s2">2 · The Lagrangian</a>
+  <a href="#s3">3 · KKT conditions</a>
+  <a href="#s4">4 · Duality</a>
+  <a href="#s5">5 · SVM & ridge</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Convex Optimization · 06</div>
+    <h1>Lagrangian Duality &amp; KKT</h1>
+    <p class="lede">Constraints look like they make optimization harder. Lagrange multipliers turn them into part of the objective, and the KKT conditions are the exact fingerprint every constrained optimum leaves behind — the theory underneath the SVM.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Sessions 03, 05</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Real problems come with constraints: a budget, a norm bound, a probability that must sum to one. The trick that tames them is <strong>Lagrange multipliers</strong> — attach a price to each constraint and fold it into the objective, converting a constrained problem into an unconstrained one. The optimality conditions that result — the <strong>KKT conditions</strong> — are the single most-cited result in optimization, and the <strong>dual</strong> viewpoint they open up is exactly where the SVM and the kernel trick live.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Write the <strong>Lagrangian</strong> for a constrained problem and read multipliers as prices/sensitivities.</li>
+    <li>State the <strong>KKT conditions</strong> — stationarity, feasibility, dual feasibility, complementary slackness — and check them.</li>
+    <li>Solve an equality-constrained QP via the KKT linear system.</li>
+    <li>Form the <strong>dual</strong>, and distinguish weak duality (always) from strong duality (convex + Slater).</li>
+    <li>Explain complementary slackness as "only active constraints have nonzero multipliers" — the SVM's support vectors.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Boyd &amp; Vandenberghe, <em>Convex Optimization</em> <span class="secs">Ch 5 (Duality), §5.5.3 (KKT)</span>; MML <span class="secs">§7.2</span>. The SVM derivation (Ch 12 there) is the payoff example.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Constrained problems</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">The Lagrangian &amp; multipliers</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">The KKT conditions</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Weak &amp; strong duality</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">SVM &amp; ridge as constrained problems</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$f(x)$</span><span class="def">Objective to minimize.</span>
+    <span class="sym">$g_i(x)\le0$</span><span class="def">Inequality constraints.</span>
+    <span class="sym">$h_j(x)=0$</span><span class="def">Equality constraints.</span>
+    <span class="sym">$\lambda_i\ge0,\ \nu_j$</span><span class="def">Multipliers: $\lambda$ for inequalities (sign-constrained), $\nu$ for equalities (free).</span>
+    <span class="sym">$\mathcal L$</span><span class="def">Lagrangian $f+\sum\lambda_i g_i+\sum\nu_j h_j$.</span>
+    <span class="sym">$p^\star,\ d^\star$</span><span class="def">Primal and dual optimal values; $d^\star\le p^\star$ (weak duality).</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>The constrained problem</h2>
+<p>The standard form is: minimize an objective subject to inequality and equality constraints.</p>
+<div class="mathband">$$ \min_x\ f(x) \quad\text{s.t.}\quad g_i(x)\le0,\ \ h_j(x)=0. $$</div>
+<p>Geometrically, the constraints carve out a <strong>feasible region</strong>, and you seek the lowest point of $f$ <em>inside</em> it. The optimum is often pushed against the boundary — you'd love to go lower, but a constraint stops you. Capturing "a constraint is pushing back" is exactly what multipliers do.</p>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>The Lagrangian &amp; the geometry of multipliers</h2>
+<p>Attach a multiplier to each constraint and add them to the objective:</p>
+<div class="mathband">$$ \mathcal L(x,\lambda,\nu) = f(x) + \sum_i \lambda_i\,g_i(x) + \sum_j \nu_j\,h_j(x). $$</div>
+<p>At an optimum, the gradient of the objective must be balanced by the constraint gradients — you can't decrease $f$ without violating a constraint. For a single equality $h(x)=0$ this is the classic picture:</p>
+<div class="mathband">$$ \nabla f(x^\star) = -\nu\,\nabla h(x^\star), $$</div>
+<p>i.e. <strong>the objective's gradient is parallel to the constraint's gradient</strong>. Equivalently, the contour of $f$ is <em>tangent</em> to the constraint surface at the optimum. The multiplier $\nu$ is the exchange rate: it tells you how much $p^\star$ would change if you relaxed the constraint by one unit — a <strong>sensitivity/price</strong>.</p>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="lagplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">minimize</span><span>f = (x₁−1)² + (x₂−2)²&nbsp;&nbsp;s.t.&nbsp;&nbsp;x₁ + x₂ = 1</span></div>
+    <div class="slider-row"><span>move along constraint&nbsp;→</span><input type="range" id="sT" min="-1.6" max="2.6" step="0.02" value="1.6"></div>
+    <div class="readout">
+      <span><span class="k">point</span> = <span class="vd" id="rPt">[…]</span></span>
+      <span><span class="k">f</span> = <span class="va" id="rF">…</span></span>
+      <span><span class="k">∇f ⟂ line?</span> <span class="vs" id="rOpt">no</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Lagrange multipliers = tangency.</strong> Circles are contours of $f$ (centered at the unconstrained min $[1,2]$); the line is the constraint $x_1+x_2=1$. Slide the point along the line: the arrow is $\nabla f$. Everywhere except the optimum, $\nabla f$ has a component <em>along</em> the line, so you can still slide downhill. At the optimum $[0,1]$ the contour is tangent — $\nabla f$ is <strong>perpendicular</strong> to the line (parallel to the constraint's normal). That tangency <em>is</em> the multiplier condition.</figcaption>
+</figure>
+
+<div class="callout c-good"><span class="tag">Verified</span>
+For $\min\tfrac12\lVert x\rVert^2$ s.t. $x_1+2x_2=3$: the Lagrange solution is $x^\star=[0.6,1.2]$ with multiplier $\nu=0.6$; stationarity $x^\star-\nu\,[1,2]=0$ and feasibility $x_1+2x_2=3$ both hold exactly (E1).</div>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>The KKT conditions — the fingerprint of an optimum</h2>
+<p>For a convex problem (and, more generally, at any regular optimum), a point $x^\star$ with multipliers $\lambda^\star,\nu^\star$ is optimal <strong>if and only if</strong> the four <strong>KKT conditions</strong> hold:</p>
+<div class="mathband">$$ \begin{aligned}
+&\textbf{1. Stationarity:} && \nabla f + \textstyle\sum_i\lambda_i\nabla g_i + \sum_j\nu_j\nabla h_j = 0 \\
+&\textbf{2. Primal feasibility:} && g_i(x^\star)\le0,\quad h_j(x^\star)=0 \\
+&\textbf{3. Dual feasibility:} && \lambda_i\ge0 \\
+&\textbf{4. Complementary slackness:} && \lambda_i\,g_i(x^\star)=0
+\end{aligned} $$</div>
+<p>The subtle, powerful one is <strong>complementary slackness</strong>: for each inequality, either the constraint is <em>active</em> ($g_i=0$, pressing on the boundary) with $\lambda_i>0$, or it's <em>inactive</em> ($g_i<0$, slack) with $\lambda_i=0$. A constraint that isn't binding has zero price.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+With an active constraint ($g_1=0,\ \lambda_1=1$) and an inactive one ($g_2=-3,\ \lambda_2=0$), the products $\lambda_i g_i=[0,0]$ (E-CS) — complementary slackness holds: nonzero price only where the constraint bites.</div>
+
+<h3>Equality-constrained QP: KKT is a linear system</h3>
+<p>For a quadratic objective with linear equality constraints, stationarity + feasibility become one linear system:</p>
+<div class="mathband">$$ \min\ \tfrac12 x^\top Q x + c^\top x \ \text{ s.t. } Ax=d \;\Longrightarrow\; \begin{bmatrix}Q & A^\top\\ A & 0\end{bmatrix}\begin{bmatrix}x\\ \nu\end{bmatrix}=\begin{bmatrix}-c\\ d\end{bmatrix}. $$</div>
+<div class="callout c-good"><span class="tag">Verified</span>
+With $Q=2I$, $c=[-2,-4]$ (unconstrained min $[1,2]$) and constraint $x_1+x_2=1$: solving the KKT block system gives $x^\star=[0,1]$, $\nu=2$ (E2). The equality pulls the solution off $[1,2]$ onto the line, exactly balanced by the multiplier.</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Duality — a lower bound that's often tight</h2>
+<p>Minimizing $\mathcal L$ over $x$ gives the <strong>dual function</strong> $g(\lambda,\nu)=\min_x\mathcal L(x,\lambda,\nu)$. For any feasible multipliers it is a <em>lower bound</em> on the optimal value — this is <strong>weak duality</strong>:</p>
+<div class="mathband">$$ d^\star = \max_{\lambda\ge0,\nu}\,g(\lambda,\nu) \;\le\; p^\star. $$</div>
+<p>The gap $p^\star-d^\star\ge0$ is the <strong>duality gap</strong>. The remarkable fact: for a <strong>convex</strong> problem satisfying a mild regularity condition (<em>Slater's</em>: a strictly feasible point exists), the gap is <strong>zero</strong> — <strong>strong duality</strong> — so you may solve whichever of the primal or dual is easier.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For the convex QP above, primal $p^\star=-3.0$ and dual $g(\nu^\star)=-3.0$: the duality gap is $0$ (E3). Strong duality holds — the two problems have the same answer.</div>
+<aside class="side"><span class="lbl">Why the dual is a gift</span>Sometimes the dual has fewer variables, nicer structure, or exposes hidden structure. The <b>SVM dual</b> depends on data only through inner products $x_i^\top x_j$ — replace those with a kernel and you get the <b>kernel trick</b> for free.</aside>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Where you've already met this: SVM &amp; ridge</h2>
+<p>Two everyday ML objects are constrained problems in disguise:</p>
+<ul>
+  <li><strong>SVM.</strong> "Maximize the margin subject to every point being correctly classified" is a convex QP. Its <em>dual</em> introduces one multiplier $\alpha_i$ per data point; complementary slackness forces $\alpha_i=0$ for all points off the margin — the nonzero ones are the <strong>support vectors</strong>. The whole model is KKT complementary slackness made visible.</li>
+  <li><strong>Ridge / LASSO.</strong> Ridge regression $\min\lVert A\mathbf w-\mathbf b\rVert^2+\lambda\lVert\mathbf w\rVert_2^2$ is the Lagrangian form of the constrained problem $\min\lVert A\mathbf w-\mathbf b\rVert^2$ s.t. $\lVert\mathbf w\rVert_2\le t$. The penalty weight $\lambda$ <em>is</em> the multiplier of the norm budget — larger $\lambda$ ⇔ tighter budget $t$.</li>
+</ul>
+<div class="callout c-anchor"><span class="tag">The unifying view</span>
+"Add $\lambda\times$(penalty) to your loss" and "constrain the penalty to a budget" are the same problem seen from the primal and the Lagrangian. Regularization strength and constraint tightness are two dials on one knob.</div>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+
+<span class="c"># equality-constrained QP via the KKT linear system</span>
+Q = np.array([[<span class="n">2.</span>,<span class="n">0.</span>],[<span class="n">0.</span>,<span class="n">2.</span>]]); c = np.array([<span class="n">-2.</span>,<span class="n">-4.</span>])
+A = np.array([[<span class="n">1.</span>,<span class="n">1.</span>]]); d = np.array([<span class="n">1.</span>])
+KKT = np.block([[Q, A.T],[A, np.zeros((<span class="n">1</span>,<span class="n">1</span>))]])
+sol = np.linalg.solve(KKT, np.concatenate([-c, d]))
+x, nu = sol[:<span class="n">2</span>], sol[<span class="n">2</span>:]
+<span class="f">print</span>(x, nu)                     <span class="c"># [0. 1.]  [2.]  (unconstrained min was [1,2])</span>
+
+<span class="c"># strong duality: primal value == dual value for the convex QP</span>
+pstar = <span class="n">0.5</span>*x@Q@x + c@x
+Qi = np.linalg.inv(Q); xopt = -Qi@(c + A.T@nu)
+dstar = <span class="n">0.5</span>*xopt@Q@xopt + c@xopt + nu@(A@xopt - d)
+<span class="f">print</span>(pstar, dstar)              <span class="c"># -3.0  -3.0   (gap = 0)</span>
+
+<span class="c"># complementary slackness: nonzero multiplier only on active constraints</span>
+g = np.array([<span class="n">0.</span>, <span class="n">-3.</span>]); lam = np.array([<span class="n">1.</span>, <span class="n">0.</span>])
+<span class="f">print</span>(lam * g)                    <span class="c"># [0. 0.]  (active: g=0; inactive: lambda=0)</span></pre>
+<div class="out">[0. 1.] [2.]
+-3.0 -3.0
+[ 0. -0.]</div>
+
+<div class="callout c-good"><span class="tag">In practice</span>
+For real constrained problems, use a solver (<code>scipy.optimize.minimize</code> with constraints, or <code>cvxpy</code> for convex programs) — but knowing KKT lets you <em>verify</em> a solution, interpret the multipliers, and understand what the solver is enforcing.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="2">
+  <div class="qz">Complementary slackness says that at the optimum…</div>
+  <button class="opt">all multipliers are positive.</button>
+  <button class="opt">every constraint is active.</button>
+  <button class="opt">a constraint has a nonzero multiplier only if it is active ($g_i=0$).</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="1">
+  <div class="qz">Strong duality (zero gap) is guaranteed when…</div>
+  <button class="opt">the problem is convex and Slater's condition holds.</button>
+  <button class="opt">the objective is linear.</button>
+  <button class="opt">there are no equality constraints.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Sign conventions:</strong> $\lambda\ge0$ for $g\le0$ inequalities; $\nu$ is free for equalities. Getting the sign wrong flips the whole KKT system.</li>
+  <li><strong>Weak duality is always true;</strong> strong duality needs convexity + a constraint qualification (Slater). Non-convex problems can have a positive gap.</li>
+  <li><strong>KKT is necessary &amp; sufficient</strong> for convex problems; for non-convex ones it's only necessary (a KKT point may be a saddle).</li>
+  <li><strong>Multiplier = sensitivity:</strong> $\nu_j=\partial p^\star/\partial(\text{RHS of }h_j)$ — the shadow price of the constraint.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Forcing all constraints active</span>Most constraints at an optimum are <em>inactive</em> (slack) with zero multiplier. Complementary slackness tells you which few actually bind.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Trusting KKT on non-convex problems</span>A KKT point in a non-convex problem may be a local min, saddle, or worse. KKT ⇒ optimal only under convexity.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Ignoring the constraint qualification</span>Without Slater (or similar), strong duality can fail and multipliers may not exist — check feasibility interior, not just feasibility.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>The <strong>Lagrangian</strong> prices each constraint into the objective; multipliers are sensitivities.</li>
+  <li>At an equality optimum, <strong>$\nabla f \parallel \nabla h$</strong> — contour tangent to the constraint.</li>
+  <li><strong>KKT:</strong> stationarity, primal feasibility, $\lambda\ge0$, and complementary slackness $\lambda_i g_i=0$.</li>
+  <li>Equality-constrained QP = one <strong>KKT linear system</strong>.</li>
+  <li><strong>Weak duality</strong> always ($d^\star\le p^\star$); <strong>strong duality</strong> under convexity + Slater (gap $=0$).</li>
+  <li>SVM support vectors and ridge's $\lambda$ are complementary slackness and Lagrangian pricing in the wild.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Solve, then verify the KKT conditions numerically.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Minimize $\tfrac12\lVert x\rVert^2$ subject to $x_1+2x_2=3$ using a Lagrange multiplier, and verify stationarity and feasibility.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$\mathcal L=\tfrac12\lVert x\rVert^2+\nu(a^\top x-3)$, $a=[1,2]$. Stationarity $x=-\nu a$; feasibility $a^\top x=3\Rightarrow-\nu\lVert a\rVert^2=3$... using the standard form $x^\star=(3/\lVert a\rVert^2)a=[0.6,1.2]$, $\nu=0.6$.</p>
+    <pre class="code">a=np.array([<span class="n">1.</span>,<span class="n">2.</span>]); x=(<span class="n">3</span>/(a@a))*a
+x, np.isclose(a@x,<span class="n">3</span>)     <span class="c"># [0.6 1.2], True</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-m">medium</span><p>Solve $\min x_1^2+x_2^2-2x_1-4x_2$ s.t. $x_1+x_2=1$ via the KKT linear system.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">Q=np.array([[<span class="n">2.</span>,<span class="n">0.</span>],[<span class="n">0.</span>,<span class="n">2.</span>]]); c=np.array([<span class="n">-2.</span>,<span class="n">-4.</span>])
+A=np.array([[<span class="n">1.</span>,<span class="n">1.</span>]]); d=np.array([<span class="n">1.</span>])
+K=np.block([[Q,A.T],[A,np.zeros((<span class="n">1</span>,<span class="n">1</span>))]])
+sol=np.linalg.solve(K, np.concatenate([-c,d]))
+sol[:<span class="n">2</span>], sol[<span class="n">2</span>:]      <span class="c"># [0. 1.], [2.]</span></pre>
+    <p>The equality drags the unconstrained min $[1,2]$ onto the line $x_1+x_2=1$, landing at $[0,1]$; $\nu=2$ prices the pull.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Confirm strong duality (gap $=0$) for the QP in E2 by evaluating primal and dual optima.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Primal $p^\star=\tfrac12 x^\top Qx+c^\top x=-3$. Dual $g(\nu^\star)$ evaluated at the recovered $x(\nu)$ also gives $-3$. Gap $=0$ — expected, since it's convex with a strictly feasible point (Slater).</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Explain, via complementary slackness, why an SVM's decision boundary depends only on the support vectors.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Each point $i$ has a multiplier $\alpha_i\ge0$ on its margin constraint. Complementary slackness: $\alpha_i>0$ only when the constraint is active — i.e., the point sits exactly on the margin. Every point strictly beyond the margin has $\alpha_i=0$ and drops out of the weight vector $\mathbf w=\sum_i\alpha_i y_i x_i$. So only the on-margin points (support vectors) define the boundary.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Show that ridge regression is the Lagrangian of a norm-constrained least squares, and describe how the penalty $\lambda$ relates to the budget $t$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Constrained: $\min\lVert A\mathbf w-\mathbf b\rVert^2$ s.t. $\lVert\mathbf w\rVert_2^2\le t$. Lagrangian: $\lVert A\mathbf w-\mathbf b\rVert^2+\lambda(\lVert\mathbf w\rVert_2^2-t)$ — dropping the constant $\lambda t$ gives exactly ridge. By complementary slackness, if the budget binds then $\lambda>0$ and there's a one-to-one decreasing map between $\lambda$ and $t$: a bigger penalty $\lambda$ enforces a tighter budget $t$ (smaller weights).</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>SVMs:</strong> the dual QP, support vectors, and the kernel trick are pure KKT + duality.</li>
+  <li><strong>Regularization:</strong> ridge/LASSO are Lagrangian forms of norm-constrained fits; $\lambda$ is a multiplier.</li>
+  <li><strong>Constrained deep learning:</strong> fairness/safety constraints enter training via Lagrangian (penalty) terms.</li>
+  <li><strong>Sensitivity analysis:</strong> multipliers are shadow prices — how much the optimum moves when a constraint loosens.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · List the KKT conditions.</div><div class="a">Stationarity ($\nabla\mathcal L=0$), primal feasibility ($g\le0,h=0$), dual feasibility ($\lambda\ge0$), complementary slackness ($\lambda_i g_i=0$).</div></div>
+<div class="qa"><div class="q">Q2 · What is complementary slackness intuitively?</div><div class="a">A constraint has a nonzero price only if it's active. Inactive (slack) constraints have zero multiplier — they aren't affecting the optimum.</div></div>
+<div class="qa"><div class="q">Q3 · Weak vs strong duality?</div><div class="a">Weak: $d^\star\le p^\star$ always. Strong: $d^\star=p^\star$, guaranteed for convex problems satisfying Slater's condition.</div></div>
+<div class="qa"><div class="q">Q4 · How does duality give the kernel trick?</div><div class="a">The SVM dual depends on data only through inner products $x_i^\top x_j$; replacing them with a kernel $k(x_i,x_j)$ implicitly maps to a high-dimensional feature space with no explicit computation.</div></div>
+<div class="qa"><div class="q">Q5 · How does ridge relate to a constraint?</div><div class="a">Ridge is the Lagrangian of least squares constrained by $\lVert\mathbf w\rVert\le t$; the penalty $\lambda$ is the constraint's multiplier — bigger $\lambda$ ⇔ tighter budget.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Lagrangian &amp; multipliers</td><td>Handle constraints; multipliers = prices</td><td class="freq f-h">High</td></tr>
+  <tr><td>Multiplier geometry ($\nabla f\parallel\nabla h$)</td><td>Tangency at the optimum</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>KKT conditions</td><td>Certify &amp; interpret constrained optima</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Complementary slackness</td><td>Support vectors; active constraints</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Weak/strong duality</td><td>Solve the easier problem; kernel trick</td><td class="freq f-h">High</td></tr>
+  <tr><td>Ridge as constrained LS</td><td>Regularization ↔ budget</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Price the constraints in; the optimum leaves a KKT fingerprint.</div>
+  <p><span class="cc-sub">Reusable idea:</span> multipliers turn constrained problems into unconstrained ones and expose their structure.</p>
+  <ul>
+    <li><strong>Lagrangian</strong> $f+\lambda^\top g+\nu^\top h$; at the optimum $\nabla f$ is balanced by the constraint gradients (tangency).</li>
+    <li><strong>KKT:</strong> stationarity, feasibility, $\lambda\ge0$, and complementary slackness $\lambda_i g_i=0$ — nonzero price only on active constraints.</li>
+    <li><strong>Duality:</strong> $d^\star\le p^\star$ always; equal for convex + Slater — solve whichever side is easier.</li>
+    <li><strong>In ML:</strong> SVM support vectors = complementary slackness; ridge's $\lambda$ = a norm-budget multiplier.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> a constraint that isn't pushing has zero price, and a constraint that is pushing bends the objective's gradient by exactly its multiplier. Read the multipliers and you read which constraints actually shaped the answer — that's the whole story behind SVMs and regularization.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>07 · Gradient methods &amp; convergence →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">With the geometry settled, how do we actually get there? Step sizes, momentum, and Nesterov acceleration — and the convergence rates (tied to the condition number from Session 02) that say how many steps it takes. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

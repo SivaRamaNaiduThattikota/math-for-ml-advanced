@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Convex Sets & Functions · Math for ML · Advanced</title>
+<meta name="description" content="Convexity is the property that turns 'search' into 'guaranteed to find the global minimum' — convex sets, convex functions, the chord and tangent tests, and why ML's classic losses are convex.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Convex Sets & Functions · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="05_convex_sets_functions">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Convex sets</a>
+  <a href="#s2">2 · Convex functions</a>
+  <a href="#s3">3 · First & second order</a>
+  <a href="#s4">4 · Why it matters</a>
+  <a href="#s5">5 · Convexity calculus & Jensen</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Convex Optimization · 05</div>
+    <h1>Convex Sets &amp; Functions</h1>
+    <p class="lede">One property changes everything about optimization: convexity. It's the guarantee that a loss surface is a single bowl — no traps, no bad local minima — so "search for the minimum" becomes "roll downhill and you're done."</p>
+    <div class="meta"><span>~20 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Sessions 02–03 (PD, Hessian)</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Optimization is easy or hard, and convexity is the line between them. A <strong>convex</strong> problem has one basin: any minimum you find is <em>the</em> minimum, and simple gradient methods provably reach it. A non-convex one — a deep network — is a landscape of valleys, ridges, and saddles where "downhill" only promises a <em>local</em> answer. This session defines convexity precisely, gives you three ways to test it, and shows why the classic ML losses (least squares, logistic, SVM, LASSO) were all engineered to be convex.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Define a convex <strong>set</strong> (segments stay inside) and a convex <strong>function</strong> (chord above graph).</li>
+    <li>Test convexity three ways: the chord inequality, the first-order tangent test, and the PSD-Hessian test.</li>
+    <li>Explain the payoff: for convex $f$, every local minimum is <strong>global</strong>.</li>
+    <li>Use the convexity "calculus" (sums, max, affine composition) to certify a loss is convex without re-deriving.</li>
+    <li>State Jensen's inequality and recognize where it powers ML (log-likelihood, the ELBO).</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> The canonical source is Boyd &amp; Vandenberghe, <em>Convex Optimization</em> <span class="secs">Ch 2 (convex sets), Ch 3 (convex functions)</span> — free PDF. Also MML <span class="secs">Ch 7.3</span>.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Convex sets</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">Convex functions — chord above graph</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">First- &amp; second-order tests</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Why convexity matters</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Convexity calculus &amp; Jensen</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$\theta\in[0,1]$</span><span class="def">Mixing weight for a convex combination $\theta x+(1-\theta)y$.</span>
+    <span class="sym">convex set</span><span class="def">$\mathcal C$ with: $x,y\in\mathcal C\Rightarrow\theta x+(1-\theta)y\in\mathcal C$.</span>
+    <span class="sym">convex fn</span><span class="def">$f(\theta x+(1-\theta)y)\le\theta f(x)+(1-\theta)f(y)$.</span>
+    <span class="sym">$\nabla^2 f\succeq0$</span><span class="def">Hessian positive semidefinite — the second-order convexity test (Session 02).</span>
+    <span class="sym">$\mathbb{E}[f(X)]$</span><span class="def">Expectation of $f(X)$; Jensen relates it to $f(\mathbb{E}[X])$.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Convex sets — no dents</h2>
+<p>A set $\mathcal C$ is <strong>convex</strong> if, for any two points in it, the entire straight segment between them stays inside:</p>
+<div class="mathband">$$ x,y\in\mathcal C,\ \theta\in[0,1] \;\Longrightarrow\; \theta x+(1-\theta)y\in\mathcal C. $$</div>
+<p>A filled disk, a cube, a halfspace $\{x:\mathbf a^\top x\le b\}$, and the set of PSD matrices (the "PSD cone," Session 02) are all convex. A crescent, a donut, or anything with a dent is not. The key structural fact you'll lean on: <strong>the intersection of convex sets is convex</strong> — which is why a feasible region defined by many linear constraints (a polytope) is convex.</p>
+<aside class="side"><span class="lbl">Why we care</span>Constrained optimization lives on a feasible set. If that set is convex <em>and</em> the objective is convex, the whole problem is convex — solvable to global optimality. That's the setup for Session 06's duality.</aside>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>Convex functions — the chord lies above the graph</h2>
+<p>A function is <strong>convex</strong> if the straight line (chord) between any two points on its graph never dips below the graph:</p>
+<div class="mathband">$$ f(\theta x+(1-\theta)y) \;\le\; \theta f(x)+(1-\theta)f(y), \qquad \forall\,\theta\in[0,1]. $$</div>
+<p>Left side: the function at a point between $x$ and $y$. Right side: the chord's height there. Convex = "function stays under its chords." Flip the inequality and you get <strong>concave</strong>. A bowl ($x^2$) is convex; a hill ($-x^2$) is concave; a wiggle ($\sin$) is neither.</p>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="cvxplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">f(x) =</span>
+      <button class="ctrl active" data-fn="sq">x²</button>
+      <button class="ctrl" data-fn="abs">|x|</button>
+      <button class="ctrl" data-fn="exp">eˣ</button>
+      <button class="ctrl" data-fn="cube">x³</button>
+      <button class="ctrl" data-fn="sin">sin x</button>
+    </div>
+    <div class="slider-row"><span>a</span><input type="range" id="sA" min="-2.8" max="2.8" step="0.05" value="-1.8"><span>b</span><input type="range" id="sB" min="-2.8" max="2.8" step="0.05" value="2.2"></div>
+    <div class="readout">
+      <span><span class="k">chord above graph?</span> <span class="va" id="rConv">yes</span></span>
+      <span><span class="k">verdict</span> = <span class="vd" id="rVerdict">convex here</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Convexity is "chords stay above."</strong> Drag the endpoints $a,b$. The teal curve is $f$; the indigo line is the chord between $(a,f(a))$ and $(b,f(b))$. For $x^2$, $|x|$, and $e^x$ the chord is always on or above the curve — convex. Switch to $x^3$ or $\sin$ and slide the endpoints across an inflection: the chord drops <em>below</em> the curve, exposing non-convexity. That single picture is the entire definition.</figcaption>
+</figure>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>First- and second-order tests</h2>
+<p>The chord definition is exact but hard to check. For differentiable $f$ there are two easier equivalents.</p>
+
+<h3>First-order: the tangent underestimates</h3>
+<div class="mathband">$$ f(y) \;\ge\; f(x) + \nabla f(x)^\top(y-x) \qquad\text{for all }x,y. $$</div>
+<p>A convex function always lies <em>above</em> each of its tangent lines. This is the property optimization actually exploits — it's why a zero gradient in a convex function means you're at the global minimum (the tangent is flat and everything sits above it).</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For $f(x)=x^2$ at $x_0=1$: the tangent underestimate $f(x_0)+f'(x_0)(y-x_0)$ is $\le f(y)$ at every test point (E5) — the graph never crosses below its tangent.</div>
+
+<h3>Second-order: the Hessian is PSD</h3>
+<div class="mathband">$$ f \text{ convex} \iff \nabla^2 f(x)\succeq 0 \ \text{ for all }x. $$</div>
+<p>This ties Pillar I directly to optimization: convexity is <em>exactly</em> "the curvature never goes negative" — a PSD Hessian everywhere (Session 02). No direction ever curves down, so there are no saddles and no local maxima to fall off.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+The <strong>log-sum-exp</strong> function $\log\sum_i e^{x_i}$ — the smooth max behind softmax — has Hessian $\operatorname{diag}(p)-pp^\top$ (with $p=\operatorname{softmax}(x)$). At $x=[1,2,0.5]$, $p=[0.231,0.629,0.140]$ and the Hessian's eigenvalues are $[0,\,0.168,\,0.364]\ge0$ (E3) — PSD, so log-sum-exp is convex. That's why the softmax cross-entropy loss is convex in the logits' linear parameters.</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Why convexity is the whole game</h2>
+<div class="callout c-anchor"><span class="tag">The one theorem to remember</span>
+For a convex function over a convex set, <strong>every local minimum is a global minimum</strong>. There is one basin. So a method that only ever moves downhill (gradient descent) can't get stuck in an inferior valley — where it stops <em>is</em> the answer.</div>
+<p>This is why classical ML deliberately uses convex losses:</p>
+<table class="sum">
+  <thead><tr><th>Model</th><th>Loss</th><th>Convex?</th></tr></thead>
+  <tbody>
+  <tr><td>Linear / ridge regression</td><td>squared error $\lVert A\mathbf x-\mathbf b\rVert^2$</td><td>Yes (PD Hessian $2A^\top A$)</td></tr>
+  <tr><td>Logistic regression</td><td>cross-entropy</td><td>Yes (in the weights)</td></tr>
+  <tr><td>SVM</td><td>hinge + L2</td><td>Yes</td></tr>
+  <tr><td>LASSO</td><td>squared error + L1</td><td>Yes (non-smooth, still convex)</td></tr>
+  <tr><td>Deep network</td><td>anything</td><td><strong>No</strong> — many saddles &amp; local minima</td></tr>
+  </tbody>
+</table>
+<p>Deep learning gives up the convexity guarantee — which is exactly why the optimization pillar's next sessions (momentum, adaptive methods, escaping saddles) exist. For everything else, recognizing convexity tells you the problem is, in principle, solved.</p>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>The convexity calculus &amp; Jensen's inequality</h2>
+<p>You rarely check convexity from scratch — you <em>build</em> convex functions from known ones with rules that preserve convexity:</p>
+<ul>
+  <li><strong>Nonnegative weighted sum:</strong> $\alpha f+\beta g$ convex if $f,g$ convex, $\alpha,\beta\ge0$. (Loss + regularizer stays convex.)</li>
+  <li><strong>Pointwise max:</strong> $\max(f,g)$ of convex functions is convex. (The hinge loss, the ReLU.)</li>
+  <li><strong>Affine composition:</strong> $f(A\mathbf x+\mathbf b)$ is convex if $f$ is. (Plugging a linear model into a convex loss.)</li>
+  <li><strong>Norms</strong> are convex (triangle inequality); so L1 and L2 penalties are convex.</li>
+</ul>
+<p>Chain these and you can certify "squared-error + $\lambda\lVert\mathbf w\rVert_1$" is convex in one breath — no Hessian needed.</p>
+
+<h3>Jensen's inequality</h3>
+<p>Convexity plus probability gives one of ML's most-used inequalities: for convex $f$,</p>
+<div class="mathband">$$ \mathbb{E}[f(X)] \;\ge\; f(\mathbb{E}[X]). $$</div>
+<div class="callout c-good"><span class="tag">Verified</span>
+For convex $f=\exp$ and $X\sim\mathcal N(0,1)$: $\mathbb{E}[e^X]\approx1.641 \ge e^{\mathbb{E}[X]}\approx0.995$ (E-J). The average of the curve sits above the curve of the average.</div>
+<aside class="side"><span class="lbl">Thread forward</span>Jensen is the engine behind the <b>ELBO</b> in variational inference and VAEs (Sessions 12 &amp; 18): pushing an expectation inside a concave $\log$ produces a tractable lower bound you can maximize.</aside>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+
+<span class="c"># chord test: convex <=> f(mix) <= mix of f, for all pairs</span>
+<span class="k">def</span> <span class="f">violations</span>(f, lo, hi, n=<span class="n">5000</span>):
+    rng = np.random.default_rng(<span class="n">0</span>); bad = <span class="n">0</span>
+    <span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(n):
+        a, b = rng.uniform(lo, hi, <span class="n">2</span>); t = rng.uniform(<span class="n">0</span>, <span class="n">1</span>)
+        <span class="k">if</span> f(t*a+(<span class="n">1</span>-t)*b) &gt; t*f(a)+(<span class="n">1</span>-t)*f(b)+<span class="n">1e-9</span>: bad += <span class="n">1</span>
+    <span class="k">return</span> bad
+
+<span class="f">print</span>(violations(<span class="k">lambda</span> x: x**<span class="n">2</span>, -<span class="n">3</span>, <span class="n">3</span>))    <span class="c"># 0    -> convex</span>
+<span class="f">print</span>(violations(<span class="k">lambda</span> x: x**<span class="n">3</span>, -<span class="n">3</span>, <span class="n">3</span>))    <span class="c"># 2450 -> NOT convex</span>
+
+<span class="c"># second-order: log-sum-exp Hessian is PSD (softmax structure)</span>
+x = np.array([<span class="n">1.</span>,<span class="n">2.</span>,<span class="n">0.5</span>]); p = np.exp(x)/np.sum(np.exp(x))
+H = np.diag(p) - np.outer(p, p)
+<span class="f">print</span>(np.round(np.linalg.eigvalsh(H), <span class="n">4</span>))   <span class="c"># [0. 0.168 0.364] >= 0</span>
+
+<span class="c"># Jensen: E[exp X] >= exp(E X)</span>
+X = np.random.default_rng(<span class="n">1</span>).normal(<span class="n">0</span>, <span class="n">1</span>, <span class="n">100000</span>)
+<span class="f">print</span>(np.mean(np.exp(X)), np.exp(np.mean(X)))   <span class="c"># 1.641 >= 0.995</span></pre>
+<div class="out">0
+2450
+[0.     0.1681 0.3637]
+1.6409... 0.9954...</div>
+
+<div class="callout c-good"><span class="tag">Practical test</span>
+For a differentiable loss, the fastest convexity check is: compute the Hessian and confirm <code>np.linalg.eigvalsh(H).min() &gt;= 0</code>. For hand-built objectives, the convexity calculus (sum/max/affine of convex pieces) is usually faster than any computation.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">A twice-differentiable $f$ is convex if and only if…</div>
+  <button class="opt">its gradient is zero somewhere.</button>
+  <button class="opt">its Hessian is positive semidefinite everywhere.</button>
+  <button class="opt">it has exactly one input variable.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">Why do classic ML models use convex losses?</div>
+  <button class="opt">They train faster on GPUs.</button>
+  <button class="opt">Every local minimum is global, so gradient descent can't get stuck in a worse valley.</button>
+  <button class="opt">Convex losses always have a closed form.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Convex ≠ differentiable:</strong> $|x|$ and the hinge loss are convex but have kinks — optimize with subgradients.</li>
+  <li><strong>Strictly vs strongly convex:</strong> strict ⇒ unique minimizer; strong (Hessian $\succeq mI$, $m>0$) ⇒ linear convergence rates (Session 07).</li>
+  <li><strong>Sum of convex + non-convex</strong> is generally non-convex — one bad term ruins the guarantee.</li>
+  <li><strong>Convex in each variable separately</strong> does NOT imply jointly convex (e.g. $xy$).</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · "It trained, so it's convex"</span>Reaching a good loss says nothing about convexity — non-convex problems often train fine. Convexity is about the <em>guarantee</em>, checked via the Hessian or the calculus, not the outcome.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Assuming deep nets are convex</span>They are emphatically not — hence saddles, seeds, and schedules matter. Don't expect the "local = global" guarantee there.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Non-convexity from a bad link/penalty</span>Squared error is convex, but wrapping a non-convex model inside it isn't. Convexity must hold for the <em>whole</em> objective in the parameters you optimize.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li><strong>Convex set:</strong> segments stay inside; intersections of convex sets are convex.</li>
+  <li><strong>Convex function:</strong> the chord lies above the graph.</li>
+  <li>Equivalents: <strong>tangent underestimates</strong> (first-order) and <strong>PSD Hessian</strong> (second-order).</li>
+  <li><strong>Local min = global min</strong> — the reason convex problems are "solved."</li>
+  <li>Build convex objectives with the <strong>calculus</strong>: nonneg sums, max, affine composition, norms.</li>
+  <li><strong>Jensen:</strong> $\mathbb{E}[f(X)]\ge f(\mathbb{E}[X])$ for convex $f$ — the seed of the ELBO.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Prove or test each; verify numerically where useful.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Use the chord test numerically to confirm $x^2$ is convex and $x^3$ is not on $[-3,3]$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">violations(<span class="k">lambda</span> x:x**<span class="n">2</span>,-<span class="n">3</span>,<span class="n">3</span>)   <span class="c"># 0</span>
+violations(<span class="k">lambda</span> x:x**<span class="n">3</span>,-<span class="n">3</span>,<span class="n">3</span>)   <span class="c"># 2450 (chord dips below across the inflection at 0)</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Show $f(x)=x^2$ is convex via the second-order test, and $f(x)=-x^2$ is concave.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$f''(x)=2\ge0$ for all $x$ ⇒ convex. For $-x^2$, $f''=-2\le0$ ⇒ concave. The Hessian (here a scalar second derivative) never changes sign.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Verify the log-sum-exp Hessian $\operatorname{diag}(p)-pp^\top$ is PSD at $x=[1,2,0.5]$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">x=np.array([<span class="n">1.</span>,<span class="n">2.</span>,<span class="n">0.5</span>]); p=np.exp(x)/np.sum(np.exp(x))
+np.linalg.eigvalsh(np.diag(p)-np.outer(p,p))   <span class="c"># [0, 0.168, 0.364] >= 0</span></pre>
+    <p>All eigenvalues $\ge0$ ⇒ PSD ⇒ log-sum-exp is convex. (The single $0$ eigenvalue is the direction $p$ itself — LSE is flat under adding a constant to all logits.)</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Argue, using the convexity calculus alone, that ridge-regularized least squares $\lVert A\mathbf w-\mathbf b\rVert^2+\lambda\lVert\mathbf w\rVert_2^2$ is convex.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$\lVert\cdot\rVert^2$ is convex; $A\mathbf w-\mathbf b$ is affine, so $\lVert A\mathbf w-\mathbf b\rVert^2$ is convex (affine composition). $\lambda\lVert\mathbf w\rVert_2^2$ is a nonnegative multiple of a convex function. Their sum is convex (nonneg sum). Done — no Hessian required. (And $\lambda>0$ makes it <em>strongly</em> convex ⇒ unique $\mathbf w$.)</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Confirm Jensen's inequality for a convex $f$ of your choice on Gaussian samples, and explain the direction for concave $f$ (e.g. $\log$).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">X=np.random.default_rng(<span class="n">1</span>).normal(<span class="n">0</span>,<span class="n">1</span>,<span class="n">100000</span>)
+np.mean(np.exp(X)), np.exp(np.mean(X))   <span class="c"># 1.641 >= 0.995  (convex: E[f] >= f(E))</span>
+np.mean(np.log(np.abs(X)+<span class="n">1</span>)), np.log(np.mean(np.abs(X)+<span class="n">1</span>))  <span class="c"># concave: E[f] <= f(E)</span></pre>
+    <p>For convex $f$, $\mathbb E[f(X)]\ge f(\mathbb E X)$; for concave $f$ the inequality flips. This flip is exactly why the log-likelihood's ELBO is a <em>lower</em> bound.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Classic models:</strong> linear/logistic/SVM/LASSO are convex by design → reliable global solutions.</li>
+  <li><strong>Regularization:</strong> adding a convex penalty keeps the problem convex (and strongly convex → unique).</li>
+  <li><strong>Deep learning:</strong> non-convex, so the next sessions (momentum, Adam, escaping saddles) earn their keep.</li>
+  <li><strong>Variational methods:</strong> Jensen turns intractable log-likelihoods into optimizable ELBOs (VAEs, VI).</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · Define a convex function two ways.</div><div class="a">Chord: $f(\theta x+(1-\theta)y)\le\theta f(x)+(1-\theta)f(y)$. Second-order: $\nabla^2 f\succeq0$ everywhere. (Also first-order: lies above every tangent.)</div></div>
+<div class="qa"><div class="q">Q2 · Why does convexity matter for optimization?</div><div class="a">Every local minimum is global, so gradient descent converges to the true optimum — no risk of a worse local valley.</div></div>
+<div class="qa"><div class="q">Q3 · Is the softmax/cross-entropy loss convex?</div><div class="a">Log-sum-exp is convex (PSD Hessian $\operatorname{diag}(p)-pp^\top$), so cross-entropy is convex in the linear logits — but not in a deep network's weights overall.</div></div>
+<div class="qa"><div class="q">Q4 · How do you certify a composite loss is convex quickly?</div><div class="a">The convexity calculus: nonnegative sums, pointwise max, affine composition, and norms all preserve convexity — chain them.</div></div>
+<div class="qa"><div class="q">Q5 · State Jensen's inequality and one ML use.</div><div class="a">$\mathbb E[f(X)]\ge f(\mathbb E X)$ for convex $f$. It's the step that produces the ELBO lower bound in variational inference / VAEs.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Convex set</td><td>Feasible regions; guarantees for constraints</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>Convex function (chord test)</td><td>Defines "easy" optimization</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>PSD-Hessian test</td><td>Practical convexity check (Pillar I bridge)</td><td class="freq f-h">High</td></tr>
+  <tr><td>Local = global</td><td>Why convex losses are trusted</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Convexity calculus</td><td>Certify losses without re-deriving</td><td class="freq f-h">High</td></tr>
+  <tr><td>Jensen's inequality</td><td>ELBO / variational inference</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Convex = one bowl, so downhill is global.</div>
+  <p><span class="cc-sub">Reusable idea:</span> convexity is the property that makes "minimize" a solved problem.</p>
+  <ul>
+    <li><strong>Test it three ways:</strong> chord above graph, tangent underestimates, or $\nabla^2 f\succeq0$ everywhere.</li>
+    <li><strong>The payoff:</strong> every local minimum is global — gradient descent can't get trapped.</li>
+    <li><strong>Build it:</strong> nonneg sums, pointwise max, affine composition, and norms all preserve convexity — so least-squares, logistic, SVM, and LASSO are convex by construction.</li>
+    <li><strong>Jensen</strong> ($\mathbb E[f(X)]\ge f(\mathbb E X)$) is convexity meeting probability — the seed of the ELBO.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> convexity is the line between "roll downhill and you're done" and "hope your initialization was lucky." Classic ML stays on the easy side on purpose; deep learning steps off it, which is why the rest of this pillar exists.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>06 · Lagrangian duality &amp; KKT →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">Now add constraints. Lagrange multipliers turn a constrained convex problem into an unconstrained one, and the KKT conditions are the exact fingerprint every optimum leaves behind — the theory under SVMs and constrained learning. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>
