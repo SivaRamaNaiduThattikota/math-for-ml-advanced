@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Mutual Information & f-Divergences · Math for ML · Advanced</title>
+<meta name="description" content="Measuring shared information and the distance between distributions: mutual information as KL from independence, and the f-divergence family (KL, JS, TV, chi-square, Hellinger).">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Mutual Information & f-Divergences · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="15_mutual_information">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Mutual information</a>
+  <a href="#s2">2 · MI = distance from independence</a>
+  <a href="#s3">3 · The f-divergence family</a>
+  <a href="#s4">4 · KL, JS & which to use</a>
+  <a href="#s5">5 · In ML</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Information Theory · 15</div>
+    <h1>Mutual Information &amp; f-Divergences</h1>
+    <p class="lede">Two questions run through modern ML: how much does one variable tell you about another, and how far apart are two distributions? Mutual information answers the first; the f-divergence family — with KL as its most famous member — answers the second.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: entropy/KL (foundational §18), Session 12</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Information theory gave us entropy (uncertainty) and KL divergence (the cost of a wrong model). This session builds two structures on top that recur everywhere in advanced ML. <strong>Mutual information</strong> quantifies dependence — how much knowing $Y$ reduces your uncertainty about $X$ — and turns out to be exactly the KL divergence between the joint and the product of marginals. And <strong>f-divergences</strong> are the single family that contains KL, reverse-KL, total variation, $\chi^2$, Jensen–Shannon and Hellinger as special cases — the vocabulary behind GANs, contrastive learning, and variational bounds.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Define mutual information three equivalent ways and state its key properties ($\ge0$, zero iff independent, symmetric).</li>
+    <li>See MI as $\mathrm{KL}(\text{joint}\,\|\,\text{product of marginals})$ — dependence as distance from independence.</li>
+    <li>Write the <strong>f-divergence</strong> template and recognize KL, TV, $\chi^2$, JS, Hellinger as members.</li>
+    <li>Explain KL's asymmetry vs JS's symmetry, and pick a divergence for a task.</li>
+    <li>Connect MI/divergences to feature selection, contrastive learning (InfoNCE), GANs, and the information bottleneck.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Cover &amp; Thomas, <em>Elements of Information Theory</em> <span class="secs">Ch 2 (MI), Ch 8</span>; Nowozin et al. 2016 (f-GAN); Poole et al. 2019 (variational MI bounds); MML <span class="secs">§6.5</span>.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Mutual information</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">MI = distance from independence</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">The f-divergence family</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">KL, JS &amp; which to use</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Where it lives in ML</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$H(X)$</span><span class="def">Entropy — average uncertainty of $X$ (foundational §18).</span>
+    <span class="sym">$H(X\mid Y)$</span><span class="def">Conditional entropy — uncertainty about $X$ left after seeing $Y$.</span>
+    <span class="sym">$I(X;Y)$</span><span class="def">Mutual information — shared information between $X$ and $Y$.</span>
+    <span class="sym">$D_f(p\|q)$</span><span class="def">f-divergence $=\sum_x q(x)\,f\!\big(p(x)/q(x)\big)$.</span>
+    <span class="sym">$\mathrm{JS}$</span><span class="def">Jensen–Shannon divergence — symmetric, bounded variant of KL.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Mutual information — shared uncertainty removed</h2>
+<p><strong>Mutual information</strong> measures how much knowing one variable reduces uncertainty about another:</p>
+<div class="mathband">$$ I(X;Y) = H(X) - H(X\mid Y) = H(Y) - H(Y\mid X) = H(X)+H(Y)-H(X,Y). $$</div>
+<p>Read the first form: start with your uncertainty about $X$ ($H(X)$); subtract what's left after learning $Y$ ($H(X\mid Y)$); the drop is the information $Y$ carries about $X$. The three forms are equal, which immediately shows MI is <strong>symmetric</strong> — $X$ tells you exactly as much about $Y$ as $Y$ does about $X$. It's also always $\ge0$, and $=0$ <em>iff</em> $X$ and $Y$ are independent (nothing shared).</p>
+
+<div class="callout c-anchor"><span class="tag">Analogy</span>
+Mutual information is how many rounds of <strong>Twenty Questions</strong> you can skip. If you must guess $X$, entropy $H(X)$ is the number of yes/no questions it takes on average. If someone first tells you $Y$, mutual information $I(X;Y)$ is how many of those questions you no longer need to ask — the answers you got &ldquo;for free&rdquo; because $X$ and $Y$ share information.</div>
+
+<div class="callout c-good"><span class="tag">Verified</span>
+For a correlated 2×2 joint, all three formulas give the same $I(X;Y)=0.3613$ bits, from $H(X)=0.934$, $H(Y)=0.971$, $H(X,Y)=1.544$ (E1). For an <em>independent</em> joint, $I=0$ exactly (E2) — no shared information.</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="miplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">bivariate Gaussian — I(X;Y) = −½ ln(1−ρ²)</span></div>
+    <div class="slider-row"><span>correlation ρ</span><input type="range" id="sRho" min="-0.98" max="0.98" step="0.02" value="0.5"></div>
+    <div class="readout">
+      <span><span class="k">MI</span> = <span class="va" id="rMI">…</span> nats</span>
+      <span><span class="k">= </span> <span class="vb" id="rMIb">…</span> bits</span>
+      <span><span class="k">dependence</span> = <span class="vd" id="rDep">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Dependence is shared information.</strong> Samples from a bivariate Gaussian with correlation $\rho$. At $\rho=0$ the cloud is round — $X$ and $Y$ are independent and $I(X;Y)=0$. Turn up $|\rho|$ and the cloud collapses toward a line: knowing one coordinate increasingly pins down the other, and $I(X;Y)=-\tfrac12\ln(1-\rho^2)$ climbs — diverging to $\infty$ as $|\rho|\to1$ (perfect dependence).</figcaption>
+</figure>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>MI is the KL divergence from independence</h2>
+<p>Here's the unifying identity. Mutual information equals the KL divergence between the true joint $p(x,y)$ and the product of marginals $p(x)p(y)$ — the distribution they'd have <em>if</em> they were independent:</p>
+<div class="mathband">$$ I(X;Y) = \mathrm{KL}\big(p(x,y)\ \big\|\ p(x)\,p(y)\big) = \sum_{x,y} p(x,y)\,\log\frac{p(x,y)}{p(x)\,p(y)}. $$</div>
+<p>So <strong>MI measures how far the joint is from independence</strong>, in exactly the KL sense. Zero divergence ⇒ the joint factorizes ⇒ independence ⇒ zero information. This is why MI is the natural, model-free measure of dependence — it captures <em>any</em> relationship (nonlinear included), unlike correlation, which only sees linear structure.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Computed directly as $\mathrm{KL}(\text{joint}\,\|\,\text{marginals})$, the 2×2 example again gives $0.3613$ bits — identical to the entropy-difference forms (E1). For a bivariate Gaussian, $I=-\tfrac12\ln(1-\rho^2)$: $0.144$ nats at $\rho=0.5$, $0.830$ at $0.9$, $1.959$ at $0.99$ (E3).</div>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>The f-divergence family — one template, many distances</h2>
+<p>KL is not the only way to measure the gap between two distributions. The <strong>f-divergence</strong> unifies a whole family with a single template — pick a convex function $f$ with $f(1)=0$:</p>
+<div class="mathband">$$ D_f(p\,\|\,q) = \sum_x q(x)\,f\!\left(\frac{p(x)}{q(x)}\right). $$</div>
+<p>Different choices of $f$ recover the classic divergences:</p>
+<table class="sum">
+  <thead><tr><th>Divergence</th><th>$f(t)$</th><th>Character</th></tr></thead>
+  <tbody>
+  <tr><td>KL $(p\|q)$</td><td>$t\log t$</td><td>asymmetric; the NLL/MLE divergence</td></tr>
+  <tr><td>Reverse KL</td><td>$-\log t$</td><td>asymmetric; mode-seeking (VI, Session 12)</td></tr>
+  <tr><td>Total variation</td><td>$\tfrac12|t-1|$</td><td>a true metric; max prob difference</td></tr>
+  <tr><td>$\chi^2$</td><td>$(t-1)^2$</td><td>heavily penalizes ratio spikes</td></tr>
+  <tr><td>Jensen–Shannon</td><td>(symmetrized KL)</td><td>symmetric, bounded by $\log2$</td></tr>
+  <tr><td>Hellinger$^2$</td><td>$(\sqrt t-1)^2$</td><td>symmetric metric; bounded</td></tr>
+  </tbody>
+</table>
+<p>All are $\ge0$ (Jensen's inequality, Session 05, applied to the convex $f$) and $=0$ iff $p=q$. They differ in <em>how</em> they penalize disagreement — which matters enormously when one becomes a training loss.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For $p=[.5,.3,.2]$, $q=[.4,.4,.2]$: $\mathrm{KL}(p\|q)=0.0253$ vs $\mathrm{KL}(q\|p)=0.0258$ (<strong>asymmetric</strong>); $\mathrm{TV}=0.10$, $\chi^2=0.05$, $\mathrm{JS}=0.0064$ (symmetric), Hellinger $=0.080$ (E4). Same two distributions, six different numbers.</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>KL's asymmetry, JS's symmetry, and picking one</h2>
+<p>KL is <strong>directional</strong>: $\mathrm{KL}(p\|q)\ne\mathrm{KL}(q\|p)$, and the direction encodes behaviour (Session 12). $\mathrm{KL}(q\|p)$ (reverse) is <em>mode-seeking</em> — $q$ hugs one mode; $\mathrm{KL}(p\|q)$ (forward) is <em>mode-covering</em> — $q$ spreads to cover all of $p$'s mass. Neither is symmetric or bounded.</p>
+<p><strong>Jensen–Shannon</strong> fixes both: it's the symmetrized, smoothed KL,</p>
+<div class="mathband">$$ \mathrm{JS}(p\,\|\,q) = \tfrac12\mathrm{KL}(p\,\|\,m) + \tfrac12\mathrm{KL}(q\,\|\,m), \qquad m=\tfrac12(p+q), $$</div>
+<p>which is symmetric, always finite, and bounded by $\log 2$. The original GAN minimizes (approximately) JS between the data and the generator. When distributions have <strong>disjoint support</strong>, though, KL is infinite and JS saturates at its max — giving no useful gradient. That failure is exactly why <em>optimal transport</em> / Wasserstein distance (Session 16) was brought in.</p>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Where it lives in real ML</h2>
+<ul>
+  <li><strong>Feature selection &amp; explainability:</strong> MI ranks features by how much they inform the target — capturing nonlinear relevance that correlation misses.</li>
+  <li><strong>Contrastive learning:</strong> InfoNCE (SimCLR, CLIP) maximizes a lower bound on the MI between two views of the same data — representations that share information are pulled together.</li>
+  <li><strong>Information bottleneck:</strong> learn a representation $Z$ that maximizes $I(Z;Y)$ (predictive) while minimizing $I(Z;X)$ (compressed) — a principled view of what deep nets should keep.</li>
+  <li><strong>Generative models:</strong> GANs minimize JS/f-divergences between real and generated data (f-GAN generalizes the choice of $f$); VAEs use KL (Session 12).</li>
+</ul>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+H = <span class="k">lambda</span> p: -np.sum(p[p&gt;<span class="n">0</span>]*np.log2(p[p&gt;<span class="n">0</span>]))
+
+<span class="c"># mutual information, three equivalent ways</span>
+J = np.array([[<span class="n">.30</span>,<span class="n">.05</span>],[<span class="n">.10</span>,<span class="n">.55</span>]])          <span class="c"># joint p(x,y)</span>
+px, py = J.sum(<span class="n">1</span>), J.sum(<span class="n">0</span>)
+I1 = H(px) + H(py) - H(J.ravel())               <span class="c"># H(X)+H(Y)-H(X,Y)</span>
+I2 = np.sum(J*np.log2(J/np.outer(px,py)))        <span class="c"># KL(joint || marginals)</span>
+<span class="f">print</span>(I1, I2)                                   <span class="c"># 0.3613  0.3613</span>
+
+<span class="c"># f-divergences between two distributions</span>
+p = np.array([<span class="n">.5</span>,<span class="n">.3</span>,<span class="n">.2</span>]); q = np.array([<span class="n">.4</span>,<span class="n">.4</span>,<span class="n">.2</span>])
+KL   = <span class="k">lambda</span> a,b: np.sum(a*np.log(a/b))
+m = <span class="n">0.5</span>*(p+q)
+<span class="f">print</span>(KL(p,q), KL(q,p))                         <span class="c"># 0.0253  0.0258  (asymmetric)</span>
+<span class="f">print</span>(<span class="n">0.5</span>*np.sum(np.abs(p-q)),                   <span class="c"># TV = 0.10</span>
+      <span class="n">0.5</span>*KL(p,m)+<span class="n">0.5</span>*KL(q,m))                   <span class="c"># JS = 0.0064 (symmetric)</span></pre>
+<div class="out">0.3612625 0.3612625
+0.02531 0.02575
+0.1 0.006437</div>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+Between <em>known</em> discrete distributions, MI and any f-divergence are $O(k)$ over the support — trivial. The hard part is <strong>estimation from continuous samples</strong>: naïve histogram binning suffers the curse of dimensionality, so practitioners use $k$-NN estimators (KSG) or <strong>neural estimators</strong> (MINE, InfoNCE) that trade compute for a scalable variational bound. Never MI-estimate a high-dimensional continuous variable by binning.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">Mutual information $I(X;Y)=0$ exactly when…</div>
+  <button class="opt">$X$ and $Y$ are perfectly correlated.</button>
+  <button class="opt">$X$ and $Y$ are independent (the joint factorizes).</button>
+  <button class="opt">$X=Y$.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">Compared with correlation, mutual information…</div>
+  <button class="opt">only detects linear relationships.</button>
+  <button class="opt">detects any dependence, including nonlinear (it's KL from independence).</button>
+  <button class="opt">is always equal to the correlation coefficient.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Units:</strong> MI in bits (log₂) or nats (ln) — state which. Conversions: $1\text{ nat}=1.443\text{ bits}$.</li>
+  <li><strong>Continuous MI can be negative-looking or infinite</strong> as differential entropy; for a bivariate Gaussian it's the clean $-\tfrac12\ln(1-\rho^2)$, blowing up as $|\rho|\to1$.</li>
+  <li><strong>KL is unbounded and asymmetric;</strong> if $q=0$ where $p&gt;0$, $\mathrm{KL}(p\|q)=\infty$. TV, JS, Hellinger stay bounded.</li>
+  <li><strong>Zero correlation ≠ independence</strong> (except jointly Gaussian) — MI catches the dependence correlation misses.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Estimating MI by binning in high dimensions</span>Histogram MI explodes in bias/variance as dimension grows. Use k-NN (KSG) or neural (MINE/InfoNCE) estimators for continuous, high-dim variables.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Forgetting KL's direction</span>$\mathrm{KL}(p\|q)$ (mode-covering) and $\mathrm{KL}(q\|p)$ (mode-seeking) behave oppositely. The wrong direction gives the wrong training behaviour (Session 12).</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Using JS/KL for disjoint supports</span>When distributions barely overlap, KL is infinite and JS saturates — no gradient to learn from. This is the GAN instability that Wasserstein distance (Session 16) fixes.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>$I(X;Y)=H(X)-H(X\mid Y)=H(X)+H(Y)-H(X,Y)$ — symmetric, $\ge0$, zero iff independent.</li>
+  <li>$I(X;Y)=\mathrm{KL}(\text{joint}\,\|\,\text{marginals})$ — <strong>dependence = distance from independence</strong>.</li>
+  <li>MI catches <strong>nonlinear</strong> dependence; correlation only sees linear.</li>
+  <li><strong>f-divergence</strong> $D_f=\sum q\,f(p/q)$ unifies KL, reverse-KL, TV, $\chi^2$, JS, Hellinger; all $\ge0$, zero iff $p=q$.</li>
+  <li>KL is <strong>asymmetric &amp; unbounded</strong>; JS/TV/Hellinger are symmetric (JS &amp; Hellinger bounded).</li>
+  <li>Disjoint supports break KL/JS gradients — reach for <strong>Wasserstein</strong> (Session 16).</li>
+</ol>
+
+<hr class="divider">
+
+<!-- SECOND VIEW -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 460 210" role="img" aria-label="entropy Venn diagram: two circles whose overlap is mutual information">
+  <g font-family="JetBrains Mono, monospace" font-size="12" text-anchor="middle">
+    <circle cx="180" cy="105" r="85" fill="rgba(90,79,207,.14)" stroke="#5A4FCF" stroke-width="2"/>
+    <circle cx="280" cy="105" r="85" fill="rgba(14,140,128,.14)" stroke="#0E8C80" stroke-width="2"/>
+    <text x="120" y="60" fill="#5A4FCF">H(X)</text>
+    <text x="340" y="60" fill="#0E8C80">H(Y)</text>
+    <text x="135" y="112" fill="#5A4FCF" font-size="11">H(X|Y)</text>
+    <text x="325" y="112" fill="#0E8C80" font-size="11">H(Y|X)</text>
+    <text x="230" y="100" fill="#5B3FE0" font-weight="600">I(X;Y)</text>
+    <text x="230" y="120" font-size="10" fill="#6E6C7A">(overlap)</text>
+    <text x="230" y="205" fill="#6E6C7A" font-size="11">union = H(X,Y)</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">Mutual information is the overlap of the two entropy circles</div>
+</div>
+<figcaption><strong>Figure 2 — The entropy Venn diagram.</strong> A second view of the definition: each circle is a variable's entropy; their <em>overlap</em> is the mutual information $I(X;Y)$; the crescents are the conditional entropies $H(X\mid Y)$ and $H(Y\mid X)$; the whole union is the joint entropy $H(X,Y)$. Independence shrinks the overlap to zero.</figcaption>
+</figure>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Compute each and confirm the identities.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-m">medium</span><p>For the joint $\begin{bmatrix}.30&.05\\.10&.55\end{bmatrix}$, compute $I(X;Y)$ two ways and confirm they match.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">J=np.array([[<span class="n">.3</span>,<span class="n">.05</span>],[<span class="n">.1</span>,<span class="n">.55</span>]]); px,py=J.sum(<span class="n">1</span>),J.sum(<span class="n">0</span>)
+H=<span class="k">lambda</span> p:-np.sum(p[p&gt;<span class="n">0</span>]*np.log2(p[p&gt;<span class="n">0</span>]))
+H(px)+H(py)-H(J.ravel()), np.sum(J*np.log2(J/np.outer(px,py)))   <span class="c"># both 0.3613</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Show $I(X;Y)=0$ for an independent joint (e.g. $p_X=[.4,.6]$, $p_Y=[.3,.7]$).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">J=np.outer([<span class="n">.4</span>,<span class="n">.6</span>],[<span class="n">.3</span>,<span class="n">.7</span>])
+np.sum(J*np.log2(J/np.outer(J.sum(<span class="n">1</span>),J.sum(<span class="n">0</span>))))   <span class="c"># 0.0</span></pre>
+    <p>An independent joint <em>is</em> the product of marginals, so the KL from independence is zero — no shared information.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Verify the bivariate-Gaussian formula $I=-\tfrac12\ln(1-\rho^2)$ for $\rho=0.5,0.9$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">[-<span class="n">0.5</span>*np.log(<span class="n">1</span>-r**<span class="n">2</span>) <span class="k">for</span> r <span class="k">in</span> (<span class="n">0.5</span>,<span class="n">0.9</span>)]   <span class="c"># [0.1438, 0.8304] nats</span></pre>
+    <p>MI grows without bound as $|\rho|\to1$: perfect correlation means each variable fully determines the other, so infinitely much shared information (in the continuous, noiseless limit).</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Compute KL(p‖q), KL(q‖p), TV and JS for $p=[.5,.3,.2]$, $q=[.4,.4,.2]$ and note which are symmetric.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">KL=<span class="k">lambda</span> a,b:np.sum(a*np.log(a/b)); m=<span class="n">0.5</span>*(p+q)
+KL(p,q),KL(q,p)                 <span class="c"># 0.0253, 0.0258  -> asymmetric</span>
+<span class="n">0.5</span>*np.sum(np.abs(p-q))          <span class="c"># TV = 0.10 (symmetric)</span>
+<span class="n">0.5</span>*KL(p,m)+<span class="n">0.5</span>*KL(q,m)         <span class="c"># JS = 0.0064 (symmetric)</span></pre>
+    <p>KL differs by direction; TV and JS are symmetric in $p,q$.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Construct two distributions with <em>disjoint</em> support and show KL is infinite while JS is bounded — explaining the GAN gradient problem.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">p=np.array([<span class="n">.5</span>,<span class="n">.5</span>,<span class="n">0</span>,<span class="n">0</span>]); q=np.array([<span class="n">0</span>,<span class="n">0</span>,<span class="n">.5</span>,<span class="n">.5</span>])
+<span class="c"># KL(p||q): p&gt;0 where q=0 -> log(p/0)=inf</span>
+m=<span class="n">0.5</span>*(p+q)
+<span class="n">0.5</span>*np.sum(p[p&gt;<span class="n">0</span>]*np.log(p[p&gt;<span class="n">0</span>]/m[p&gt;<span class="n">0</span>]))+<span class="n">0.5</span>*np.sum(q[q&gt;<span class="n">0</span>]*np.log(q[q&gt;<span class="n">0</span>]/m[q&gt;<span class="n">0</span>]))   <span class="c"># = ln2 (max)</span></pre>
+    <p>With no overlap, $\mathrm{KL}(p\|q)=\infty$ and $\mathrm{JS}=\log2$ (its maximum) — both flat in the parameters, so <em>no gradient</em>. A generator whose samples don't yet overlap the data gets no learning signal; Wasserstein distance (Session 16) stays finite and informative here.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- INTERVIEW -->
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · Define mutual information and its relation to KL.</div><div class="a">$I(X;Y)=H(X)-H(X\mid Y)=\mathrm{KL}(p(x,y)\,\|\,p(x)p(y))$ — the KL divergence between the joint and the product of marginals; the distance of the joint from independence.</div></div>
+<div class="qa"><div class="q">Q2 · MI vs correlation?</div><div class="a">Correlation measures only linear association and can be zero for strongly dependent variables; MI measures any dependence (it's zero iff independent), capturing nonlinear structure.</div></div>
+<div class="qa"><div class="q">Q3 · What is an f-divergence?</div><div class="a">$D_f(p\|q)=\sum q\,f(p/q)$ for convex $f$ with $f(1)=0$. KL, reverse-KL, TV, $\chi^2$, JS, and Hellinger are all members; all $\ge0$ and zero iff $p=q$.</div></div>
+<div class="qa"><div class="q">Q4 · Why use JS over KL, and when does it fail?</div><div class="a">JS is symmetric and bounded by $\log2$ (KL is neither). But for disjoint supports JS saturates and gives no gradient — the GAN training problem that Wasserstein distance addresses.</div></div>
+<div class="qa"><div class="q">Q5 · Name an ML method that maximizes mutual information.</div><div class="a">Contrastive learning (InfoNCE — SimCLR, CLIP) maximizes a lower bound on the MI between two views; the information bottleneck trades $I(Z;Y)$ against $I(Z;X)$.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Mutual information</td><td>Nonlinear dependence; feature selection</td><td class="freq f-h">High</td></tr>
+  <tr><td>MI = KL from independence</td><td>Unifies dependence &amp; divergence</td><td class="freq f-h">High</td></tr>
+  <tr><td>f-divergence family</td><td>One template: KL/JS/TV/χ²/Hellinger</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>KL asymmetry, JS symmetry</td><td>Loss behaviour; GAN objective</td><td class="freq f-h">High</td></tr>
+  <tr><td>Disjoint-support failure</td><td>Motivates Wasserstein (S16)</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>InfoNCE / info bottleneck</td><td>Contrastive &amp; representation learning</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Shared information is KL from independence; every distance is one f.</div>
+  <p><span class="cc-sub">Reusable idea:</span> measure dependence and distribution-distance with the same information-theoretic toolkit.</p>
+  <ul>
+    <li><strong>Mutual information</strong> $I(X;Y)=H(X)-H(X\mid Y)=\mathrm{KL}(\text{joint}\,\|\,\text{marginals})$ — symmetric, $\ge0$, zero iff independent, and blind to nothing (nonlinear too).</li>
+    <li><strong>f-divergence</strong> $D_f=\sum q\,f(p/q)$ is one template for KL, reverse-KL, TV, $\chi^2$, JS, Hellinger.</li>
+    <li><strong>Direction &amp; bounds matter:</strong> KL is asymmetric/unbounded; JS is symmetric/bounded — and both die on disjoint supports.</li>
+    <li><strong>In ML:</strong> feature relevance, InfoNCE contrastive learning, the information bottleneck, and f-GAN objectives.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> &ldquo;how related?&rdquo; and &ldquo;how far apart?&rdquo; are the same question in different clothes — mutual information is a KL divergence, and KL is one member of the f-divergence family. Choosing the right divergence <em>is</em> choosing how your model is penalized for being wrong.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>16 · Optimal Transport &amp; the Wasserstein Distance →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">When distributions barely overlap, f-divergences give no gradient. Optimal transport measures distance as the <em>work</em> to move one distribution onto the other — a geometry-aware metric that stays informative, and the engine behind Wasserstein GANs and diffusion. <em>(Completes Pillar V.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Optimal Transport & the Wasserstein Distance · Math for ML · Advanced</title>
+<meta name="description" content="Distance as the minimum work to move one distribution onto another: the Wasserstein metric, its 1D closed form, Kantorovich duality (WGAN), Sinkhorn, and why it beats KL/JS on disjoint supports.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Optimal Transport & the Wasserstein Distance · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="16_optimal_transport">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Moving mass</a>
+  <a href="#s2">2 · The Wasserstein distance</a>
+  <a href="#s3">3 · Why it beats KL/JS</a>
+  <a href="#s4">4 · Kantorovich duality</a>
+  <a href="#s5">5 · Sinkhorn & ML</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Information Theory · 16</div>
+    <h1>Optimal Transport &amp; the Wasserstein Distance</h1>
+    <p class="lede">KL and JS ask &ldquo;how surprised&rdquo; — and go blind when two distributions don't overlap. Optimal transport asks a different, geometry-aware question: how much <em>work</em> to move one distribution onto the other? That distance stays finite and informative exactly where the others fail.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy/SciPy-verified</span><span class="dot"></span><span>Prereq: Session 15; distributions</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Session 15 ended on a failure: when two distributions barely overlap, KL is infinite and Jensen–Shannon saturates, so a generator whose samples miss the data gets <em>no gradient</em>. <strong>Optimal transport</strong> repairs this by measuring distance geometrically — as the minimum cost to physically move the mass of one distribution to match the other (the &ldquo;earth mover's distance&rdquo;). The result, the <strong>Wasserstein distance</strong>, is a true metric that varies smoothly with how far apart distributions are, which is precisely why it powers Wasserstein GANs, diffusion models, and domain adaptation.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Frame distance as optimal transport of mass — cost = amount moved × distance moved.</li>
+    <li>State the Wasserstein distance and compute the 1D case (area between CDFs / sorted matching).</li>
+    <li>Explain why it gives useful gradients on disjoint supports where KL/JS don't.</li>
+    <li>State Kantorovich–Rubinstein duality and connect it to the WGAN critic.</li>
+    <li>Describe Sinkhorn (entropic OT) and where OT shows up in ML.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Peyré &amp; Cuturi, <em>Computational Optimal Transport</em> (the standard modern text); Arjovsky et al. 2017 (WGAN); Cuturi 2013 (Sinkhorn). Villani's <em>Optimal Transport</em> for the theory.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Moving mass</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">The Wasserstein distance</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">Why it beats KL/JS</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Kantorovich duality (WGAN)</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Sinkhorn &amp; where it lives</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$\gamma(x,y)$</span><span class="def">Transport plan (coupling): how much mass moves from $x$ to $y$.</span>
+    <span class="sym">$c(x,y)$</span><span class="def">Ground cost of moving a unit of mass from $x$ to $y$ (often $\lVert x-y\rVert$).</span>
+    <span class="sym">$W_p$</span><span class="def">$p$-Wasserstein distance; $W_1$ is the earth mover's distance.</span>
+    <span class="sym">$F(x)$</span><span class="def">CDF; $W_1 = \int|F_p - F_q|$ in one dimension.</span>
+    <span class="sym">1-Lipschitz</span><span class="def">$|f(x)-f(y)|\le\lVert x-y\rVert$ — the critic constraint in the dual.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Distance as moving mass</h2>
+<p>Picture each distribution as a pile of sand. To turn pile $p$ into pile $q$ you shovel mass around; each bit of mass moved from $x$ to $y$ costs (amount) × (distance). The <strong>optimal transport</strong> cost is the cheapest way to do it — minimize over all valid transport plans $\gamma$ (couplings whose marginals are $p$ and $q$):</p>
+<div class="mathband">$$ \text{OT}(p,q) = \min_{\gamma\in\Pi(p,q)} \sum_{x,y} \gamma(x,y)\,c(x,y). $$</div>
+<p>Unlike KL (which compares densities point-by-point and never accounts for <em>where</em> mass sits), OT bakes in the <strong>geometry</strong> of the space through the cost $c$. Moving mass a long way costs more — so two distributions that are far apart are far in OT distance, even if they never overlap.</p>
+
+<div class="callout c-anchor"><span class="tag">Analogy</span>
+Wasserstein distance is the <strong>minimum work to reshape one sandpile into another</strong> — sum of (how much sand) × (how far you shovel it). KL asks &ldquo;how <em>surprised</em> am I by this pile?&rdquo; and gives up if the piles don't touch; Wasserstein asks &ldquo;how far would I have to <em>shovel</em>?&rdquo; and always has an answer, growing steadily with the gap.</div>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>The Wasserstein distance</h2>
+<p>With cost $c(x,y)=\lVert x-y\rVert^p$, the <strong>$p$-Wasserstein distance</strong> is the $p$-th root of the optimal transport cost:</p>
+<div class="mathband">$$ W_p(p,q) = \left(\min_{\gamma\in\Pi(p,q)}\ \mathbb E_{(x,y)\sim\gamma}\,\lVert x-y\rVert^p\right)^{1/p}. $$</div>
+<p>$W_1$ (the <strong>earth mover's distance</strong>) uses ground distance directly. It's a genuine <em>metric</em> — symmetric, non-negative, satisfies the triangle inequality — unlike the f-divergences. In <strong>one dimension</strong> it has a beautiful closed form: sort both samples and match them in order; equivalently, integrate the gap between the CDFs:</p>
+<div class="mathband">$$ W_1(p,q) = \int_{-\infty}^{\infty}\big|F_p(t) - F_q(t)\big|\,dt = \tfrac1n\sum_i \big|\,\text{sort}(a)_i - \text{sort}(b)_i\,\big|. $$</div>
+<div class="callout c-good"><span class="tag">Verified</span>
+For two $n=4000$ Gaussian samples, the sorted-matching formula equals <code>scipy.stats.wasserstein_distance</code> to three decimals, and both track the shift: $W_1=0.99$ at shift $1$, $2.99$ at shift $3$ (E1). Moving a distribution by $d$ costs $W_1\approx d$ — distance means what it should.</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="otplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">two Gaussians, separated by a shift — Wasserstein vs Jensen–Shannon</span></div>
+    <div class="slider-row"><span>shift</span><input type="range" id="sShift" min="0" max="10" step="0.1" value="3"></div>
+    <div class="readout">
+      <span><span class="k">W₁</span> = <span class="va" id="rW">…</span></span>
+      <span><span class="k">JS</span> = <span class="vb" id="rJS">…</span></span>
+      <span><span class="k">gradient?</span> = <span class="vd" id="rGrad">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Why Wasserstein, in one slider.</strong> Two equal-width Gaussians pushed apart by a shift. <strong>$W_1$ grows linearly</strong> with the separation — always a downhill signal to pull them together. <strong>JS saturates</strong> at $\ln 2$ once they stop overlapping and goes flat — <em>no gradient</em>. This is exactly the GAN failure from Session 15, and exactly what Wasserstein fixes.</figcaption>
+</figure>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>Why it beats KL and JS</h2>
+<p>The decisive advantage shows up when supports <strong>don't overlap</strong>:</p>
+<table class="sum">
+  <thead><tr><th>Distributions at distance $d$</th><th>KL</th><th>JS</th><th>$W_1$</th></tr></thead>
+  <tbody>
+  <tr><td>overlapping</td><td>finite</td><td>finite</td><td>$\approx$ shift</td></tr>
+  <tr><td>disjoint (no overlap)</td><td>$\infty$</td><td>$\log 2$ (max, flat)</td><td>$d$ (finite, grows)</td></tr>
+  </tbody>
+</table>
+<div class="callout c-good"><span class="tag">Verified</span>
+As two Gaussians separate, $W_1$ rises $1.0\to3.0\to6.0\to10.0$ while $\mathrm{JS}$ climbs then <em>saturates</em> at $\ln2\approx0.693$ ($0.114\to0.525\to0.690\to0.693$) (E3). And for point masses at $0$ and $3$, $W_1=3$ (finite) but $\mathrm{KL}=\infty$ (E2). Only $W_1$ keeps giving a gradient once the distributions come apart.</div>
+<p>Intuitively: KL/JS compare densities at each point, so once there's no shared support they see &ldquo;totally different&rdquo; and stop distinguishing <em>how</em> different. Wasserstein measures the <em>distance the mass must travel</em>, which keeps shrinking as you bring the distributions together — a smooth, meaningful learning signal.</p>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Kantorovich–Rubinstein duality — the WGAN critic</h2>
+<p>The transport problem is a linear program, and its dual gives $W_1$ a strikingly usable form:</p>
+<div class="mathband">$$ W_1(p,q) = \sup_{\lVert f\rVert_L\le1}\ \Big(\mathbb E_{x\sim p}[f(x)] - \mathbb E_{x\sim q}[f(x)]\Big). $$</div>
+<p>Over all <strong>1-Lipschitz</strong> functions $f$ (functions that don't change faster than their input), $W_1$ is the largest gap between the average of $f$ on $p$ and on $q$. Read $f$ as a &ldquo;witness&rdquo; that scores how $p$-like a point is. This is exactly the <strong>WGAN</strong>: the <em>critic</em> is a neural net approximating the optimal 1-Lipschitz $f$ (Lipschitzness enforced by weight clipping or a gradient penalty), and the generator minimizes the resulting $W_1$ estimate. The dual turns &ldquo;solve a transport LP&rdquo; into &ldquo;train a constrained network.&rdquo;</p>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Sinkhorn, and where OT lives in ML</h2>
+<p>Exact OT in $d$ dimensions is a large linear program — too slow at scale. <strong>Entropic regularization</strong> adds a small entropy term to the transport plan, and the solution is found by the <strong>Sinkhorn algorithm</strong>: alternately rescaling the rows and columns of a kernel matrix. It's fast ($O(n^2)$ per iteration), GPU-friendly, and <em>differentiable</em> — which is why &ldquo;Sinkhorn distance&rdquo; is the practical OT used in deep learning.</p>
+<ul>
+  <li><strong>WGAN &amp; WGAN-GP:</strong> Wasserstein loss gives stable GAN training with meaningful gradients.</li>
+  <li><strong>Diffusion &amp; generative modeling:</strong> the reverse process can be viewed as a Wasserstein <em>gradient flow</em> over distributions (Session 19).</li>
+  <li><strong>Domain adaptation &amp; distribution matching:</strong> align source and target feature distributions by minimizing OT.</li>
+  <li><strong>Comparing histograms/embeddings:</strong> word-mover's distance, shape matching, color transfer — anywhere &ldquo;how far apart are these distributions?&rdquo; needs a geometry-aware answer.</li>
+</ul>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+<span class="k">from</span> scipy.stats <span class="k">import</span> wasserstein_distance
+rng = np.random.default_rng(<span class="n">0</span>)
+
+<span class="c"># 1D W1 = mean|sorted a - sorted b| = area between CDFs = scipy</span>
+<span class="k">for</span> shift <span class="k">in</span> (<span class="n">0</span>, <span class="n">1</span>, <span class="n">3</span>):
+    a = rng.normal(<span class="n">0</span>, <span class="n">1</span>, <span class="n">4000</span>); b = rng.normal(shift, <span class="n">1</span>, <span class="n">4000</span>)
+    manual = np.mean(np.abs(np.sort(a) - np.sort(b)))
+    <span class="f">print</span>(shift, <span class="f">round</span>(manual,<span class="n">3</span>), <span class="f">round</span>(wasserstein_distance(a,b),<span class="n">3</span>))
+<span class="c"># 0 0.038 0.038 | 1 0.990 0.990 | 3 2.994 2.994  (~ equals the shift)</span>
+
+<span class="c"># W1 grows linearly with separation; JS saturates at ln2</span>
+<span class="k">def</span> <span class="f">js</span>(p,q):
+    m=<span class="n">0.5</span>*(p+q); f=<span class="k">lambda</span> a,b: np.sum(a[a&gt;<span class="n">0</span>]*np.log(a[a&gt;<span class="n">0</span>]/b[a&gt;<span class="n">0</span>]))
+    <span class="k">return</span> <span class="n">0.5</span>*f(p,m)+<span class="n">0.5</span>*f(q,m)
+<span class="c"># -> W1: 1, 3, 6, 10   JS: 0.11, 0.53, 0.69, 0.693 (== ln2, flat)</span></pre>
+<div class="out">0 0.038 0.038
+1 0.990 0.990
+3 2.994 2.994</div>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+In 1D, OT is just a sort — $O(n\log n)$. In higher dimensions exact OT is a linear program over an $n\times m$ transport plan: roughly $O(n^3\log n)$ time and $O(nm)$ memory — prohibitive at scale. <strong>Sinkhorn</strong> (entropic OT) drops this to $O(nm)$ per iteration, is GPU-parallel and differentiable, at the cost of a small blur from the regularizer. That trade is why deep learning uses Sinkhorn, not exact OT.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="2">
+  <div class="qz">Two distributions have <em>no overlapping support</em>. Which distance still gives a useful gradient?</div>
+  <button class="opt">KL — it stays finite.</button>
+  <button class="opt">Wasserstein $W_1$ — it equals the transport distance and grows smoothly.</button>
+  <button class="opt">None; all distances are flat here.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="1">
+  <div class="qz">The WGAN critic approximates…</div>
+  <button class="opt">the optimal 1-Lipschitz function in the Kantorovich dual of $W_1$.</button>
+  <button class="opt">the KL divergence between real and fake data.</button>
+  <button class="opt">the entropy of the generator.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>$W_1$ is a true metric</strong> (triangle inequality, symmetry); f-divergences generally are not.</li>
+  <li><strong>1D is free</strong> (sort); high-dimensional exact OT is expensive — use Sinkhorn or sliced-Wasserstein (average of many 1D projections).</li>
+  <li><strong>Lipschitz enforcement matters:</strong> WGAN needs the critic 1-Lipschitz (weight clipping is crude; gradient penalty / spectral norm are better).</li>
+  <li><strong>Entropic OT is biased:</strong> the regularizer blurs the plan; the &ldquo;Sinkhorn divergence&rdquo; debiases it for a truer distance.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Using KL/JS for non-overlapping distributions</span>They give infinite or flat, gradient-free values. If your model's samples don't yet overlap the target (early GAN training, far domains), use a Wasserstein/OT objective.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Running exact OT at scale</span>The LP is $O(n^3\log n)$ — it will not scale to large point sets or high dimension. Reach for Sinkhorn or sliced-Wasserstein.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Forgetting the Lipschitz constraint</span>The dual only equals $W_1$ over 1-Lipschitz $f$. An unconstrained critic doesn't estimate a distance and WGAN training breaks.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>OT distance = <strong>minimum cost to move mass</strong> from one distribution to the other (amount × distance).</li>
+  <li>$W_1$ is a <strong>true metric</strong>; in 1D it's $\int|F_p-F_q|$ = sorted matching.</li>
+  <li>On <strong>disjoint supports</strong> $W_1$ stays finite and grows smoothly; KL is $\infty$, JS saturates.</li>
+  <li><strong>Kantorovich duality:</strong> $W_1=\sup_{\lVert f\rVert_L\le1}\mathbb E_p[f]-\mathbb E_q[f]$ — the WGAN critic.</li>
+  <li><strong>Sinkhorn</strong> (entropic OT) makes it fast &amp; differentiable — the practical choice in ML.</li>
+  <li>Use OT/Wasserstein when <strong>geometry</strong> matters or supports don't overlap; f-divergences otherwise.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- SECOND VIEW -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 460 210" role="img" aria-label="W1 as the area between two CDFs">
+  <g font-family="JetBrains Mono, monospace" font-size="11">
+    <line x1="40" y1="175" x2="440" y2="175" stroke="#C9C4B6" stroke-width="1.4"/>
+    <line x1="40" y1="30" x2="40" y2="175" stroke="#C9C4B6" stroke-width="1.4"/>
+    <text x="30" y="34" text-anchor="end" fill="#6E6C7A">1</text>
+    <!-- area between CDFs (shaded) -->
+    <path d="M120,175 L120,95 L210,95 L210,30 L250,30 L250,95 L200,95 L200,175 Z" fill="rgba(90,79,207,.12)"/>
+    <!-- CDF of p (teal step) -->
+    <path d="M60,175 L120,175 L120,95 L200,95 L200,30 L440,30" fill="none" stroke="#0E8C80" stroke-width="2.4"/>
+    <!-- CDF of q (indigo step, shifted right) -->
+    <path d="M60,175 L210,175 L210,95 L250,95 L250,30 L440,30" fill="none" stroke="#5A4FCF" stroke-width="2.4"/>
+    <text x="150" y="88" fill="#0E8C80">F_p</text><text x="300" y="24" fill="#5A4FCF">F_q</text>
+    <text x="235" y="140" text-anchor="middle" fill="#5B3FE0" font-size="10">W₁ = area between</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">In 1D, the Wasserstein-1 distance is the area between the two CDFs</div>
+</div>
+<figcaption><strong>Figure 2 — $W_1$ as area between CDFs.</strong> A second, exact view: line up the cumulative distributions of $p$ (teal) and $q$ (indigo); the shaded area between them is $W_1(p,q)$. Shifting $q$ right widens that area linearly — the smooth signal that KL/JS lack once the distributions separate.</figcaption>
+</figure>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Compute Wasserstein distances and compare to KL/JS.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Compute $W_1$ between two Gaussian samples via sorted matching and confirm it matches <code>scipy.stats.wasserstein_distance</code>.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">from</span> scipy.stats <span class="k">import</span> wasserstein_distance
+a=rng.normal(<span class="n">0</span>,<span class="n">1</span>,<span class="n">4000</span>); b=rng.normal(<span class="n">3</span>,<span class="n">1</span>,<span class="n">4000</span>)
+np.mean(np.abs(np.sort(a)-np.sort(b))), wasserstein_distance(a,b)   <span class="c"># ~2.99, 2.99</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Show $W_1$ between point masses at $0$ and $d$ equals $d$, and explain why KL is infinite.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>All the mass must move a distance $d$, so $W_1=d$. KL$(p\|q)$ needs $q>0$ wherever $p>0$; here $q$ is zero at $0$, so $\log(p/q)=\log(1/0)=\infty$. Wasserstein sees a finite distance; KL sees total incompatibility.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Sweep the shift between two Gaussians and tabulate $W_1$ vs JS; note where JS goes flat.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$W_1$ rises linearly ($1,3,6,10$) as the shift grows; JS climbs then saturates at $\ln2\approx0.693$ ($0.11,0.53,0.69,0.693$). Beyond ~6σ separation JS is flat — no gradient — while $W_1$ still increases. This is the WGAN motivation in one table.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Verify $W_1$ satisfies the triangle inequality on three 1D samples (a metric property KL lacks).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">from</span> scipy.stats <span class="k">import</span> wasserstein_distance <span class="k">as</span> W
+a=rng.normal(<span class="n">0</span>,<span class="n">1</span>,<span class="n">3000</span>); b=rng.normal(<span class="n">2</span>,<span class="n">1</span>,<span class="n">3000</span>); c=rng.normal(<span class="n">5</span>,<span class="n">1</span>,<span class="n">3000</span>)
+W(a,c) &lt;= W(a,b)+W(b,c)+<span class="n">1e-6</span>   <span class="c"># True</span></pre>
+    <p>$W_1(a,c)\le W_1(a,b)+W_1(b,c)$ holds — Wasserstein is a genuine metric, so distances compose sensibly (KL, being asymmetric and unbounded, is not a metric).</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Explain, via Kantorovich duality, what the WGAN critic computes and why it must be 1-Lipschitz.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$W_1(p,q)=\sup_{\lVert f\rVert_L\le1}\mathbb E_p[f]-\mathbb E_q[f]$. The WGAN critic is a neural net trained to maximize $\mathbb E_{\text{real}}[f]-\mathbb E_{\text{fake}}[f]$, so at its optimum it <em>is</em> the witness function achieving $W_1$, and that difference <em>is</em> the Wasserstein estimate the generator minimizes. The $1$-Lipschitz constraint is essential: without it the sup is $+\infty$ (scale $f$ up) and the value is no longer a distance. Enforce it with weight clipping, a gradient penalty (WGAN-GP), or spectral normalization.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- INTERVIEW -->
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What is the Wasserstein distance intuitively?</div><div class="a">The minimum cost to transport the mass of one distribution onto another — amount moved × distance moved (the earth mover's distance). It's a true metric that respects the geometry of the space.</div></div>
+<div class="qa"><div class="q">Q2 · Why does it beat KL/JS for GANs?</div><div class="a">On non-overlapping supports KL is infinite and JS saturates (flat, no gradient); $W_1$ stays finite and grows with the separation, giving a smooth learning signal.</div></div>
+<div class="qa"><div class="q">Q3 · How do you compute $W_1$ in 1D?</div><div class="a">Sort both samples and match in order (mean absolute difference), equivalently integrate $|F_p-F_q|$, the area between the CDFs — $O(n\log n)$.</div></div>
+<div class="qa"><div class="q">Q4 · State Kantorovich–Rubinstein duality and its use.</div><div class="a">$W_1=\sup_{\lVert f\rVert_L\le1}\mathbb E_p[f]-\mathbb E_q[f]$. The WGAN critic is a network approximating this optimal 1-Lipschitz $f$; the generator minimizes the resulting $W_1$.</div></div>
+<div class="qa"><div class="q">Q5 · What is Sinkhorn and why use it?</div><div class="a">Entropy-regularized OT solved by iterative row/column rescaling — $O(n^2)$/iter, GPU-friendly, differentiable. It makes optimal transport practical in deep learning at the cost of a small regularization blur.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Optimal transport / earth mover</td><td>Geometry-aware distribution distance</td><td class="freq f-h">High</td></tr>
+  <tr><td>Wasserstein $W_1$ (metric)</td><td>Stable GANs, distribution matching</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Finite/smooth on disjoint supports</td><td>Why WGAN replaced JS-GAN</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>1D = area between CDFs</td><td>Cheap, exact computation</td><td class="freq f-h">High</td></tr>
+  <tr><td>Kantorovich duality</td><td>The WGAN critic</td><td class="freq f-h">High</td></tr>
+  <tr><td>Sinkhorn (entropic OT)</td><td>Fast, differentiable OT at scale</td><td class="freq f-m">Medium</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Measure distance by work moved, not surprise — so it never goes flat.</div>
+  <p><span class="cc-sub">Reusable idea:</span> when densities don't overlap, stop comparing them point-by-point and start moving mass.</p>
+  <ul>
+    <li><strong>Optimal transport:</strong> distance = cheapest way to shovel one distribution's mass onto the other (amount × distance).</li>
+    <li><strong>$W_1$</strong> is a true metric; in 1D it's the area between the CDFs (sorted matching) — and it <em>equals the shift</em> for translated distributions.</li>
+    <li><strong>Beats KL/JS</strong> exactly where they die: on disjoint supports $W_1$ is finite and grows smoothly, giving a gradient.</li>
+    <li><strong>Kantorovich duality</strong> = the WGAN critic (optimal 1-Lipschitz witness); <strong>Sinkhorn</strong> makes OT fast &amp; differentiable.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> KL asks &ldquo;how surprised?&rdquo; and quits when distributions don't touch; Wasserstein asks &ldquo;how far must the mass travel?&rdquo; and answers smoothly everywhere. That single change — geometry over pointwise density — is why it underpins Wasserstein GANs and the diffusion models of Pillar VI.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Pillar complete →</span>
+  <h3>Pillar VI · Modern Generative &amp; Deep Models</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">Everything now converges: attention, VAEs, diffusion, and normalizing flows — the math of Pillars I–V assembled into the architectures behind modern generative AI. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>
