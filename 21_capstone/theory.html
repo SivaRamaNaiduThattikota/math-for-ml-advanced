@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Capstone: Optimization Meets Inference · Math for ML · Advanced</title>
+<meta name="description" content="One modern training objective — the β-ELBO — dissected term by term, showing how curvature, duality, divergences, and the generative families you learned fuse into a single loss.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Capstone: Optimization Meets Inference · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="21_capstone">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · One objective</a>
+  <a href="#s2">2 · Term by term</a>
+  <a href="#s3">3 · β &amp; duality</a>
+  <a href="#s4">4 · Optimizing it</a>
+  <a href="#s5">5 · The whole track</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules &amp; traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Capstone · ★</div>
+    <h1>Capstone: Optimization Meets Inference</h1>
+    <p class="lede">Twenty sessions, six pillars — and they were never separate subjects. This finale takes <em>one</em> modern training objective and reads it term by term, watching linear algebra, convex duality, probabilistic inference, learning theory, information theory, and the generative families all snap into place inside a single loss.</p>
+    <div class="meta"><span>~24 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Synthesis of Sessions 1–20</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Here is the objective. It is the (β-weighted) <strong>evidence lower bound</strong> — the loss behind VAEs, the scaffold under diffusion, and a template for half of modern probabilistic ML:</p>
+<div class="mathband">$$ \mathcal L(\theta,\phi;x) \;=\; \underbrace{\mathbb E_{q_\phi(z\mid x)}\big[\log p_\theta(x\mid z)\big]}_{\text{reconstruction}} \;-\; \beta\,\underbrace{D_{\mathrm{KL}}\!\big(q_\phi(z\mid x)\,\big\|\,p(z)\big)}_{\text{regularizer}}. $$</div>
+<p>Every symbol here is a door into one of the pillars. This session opens each door in turn — not to introduce anything new, but to show that what looked like six separate toolkits was one machine all along.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Read the β-ELBO term by term and name the pillar each term comes from.</li>
+    <li>See the reconstruction and KL terms as <strong>divergences</strong>, and the Gaussian KL as a <strong>log-det / trace</strong> expression.</li>
+    <li>Derive $\beta$ as a <strong>Lagrange multiplier</strong> on a KL constraint (β-VAE = constrained optimization).</li>
+    <li>Explain the <strong>reparameterization trick</strong> and why it beats the score-function gradient.</li>
+    <li>Connect <strong>Fisher information</strong> to the curvature of the KL, tying optimization to inference.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Kingma &amp; Welling 2014 (VAE); Higgins et al. 2017 (β-VAE); Alemi et al. 2018 (rate–distortion / information bottleneck view); Amari 1998 (natural gradient). A synthesis of Sessions 1–20 — every claim here was proved earlier.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">One objective to read</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">Term by term → pillars</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">β and convex duality</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Optimizing it</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">The whole track in one loss</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$x,z$</span><span class="def">Observed data and latent variable; $q_\phi(z\mid x)$ the encoder, $p_\theta(x\mid z)$ the decoder.</span>
+    <span class="sym">$\mathcal L$</span><span class="def">The ELBO — a lower bound on $\log p_\theta(x)$; training maximizes it.</span>
+    <span class="sym">$\beta$</span><span class="def">Weight on the KL term; a Lagrange multiplier on a KL (rate) constraint.</span>
+    <span class="sym">$D_{\mathrm{KL}}$</span><span class="def">KL divergence — the regularizer pulling the posterior toward the prior.</span>
+    <span class="sym">$I(\theta)$</span><span class="def">Fisher information — the curvature of the KL / the log-likelihood.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>One objective to read</h2>
+<p>Training a latent-variable model means maximizing the data likelihood $\log p_\theta(x)$, which is intractable because it integrates over all latents $z$. Variational inference (Session 12) replaces it with a bound: introduce an encoder $q_\phi(z\mid x)$ and derive</p>
+<div class="mathband">$$ \log p_\theta(x) \;\ge\; \mathbb E_{q_\phi}[\log p_\theta(x\mid z)] - D_{\mathrm{KL}}(q_\phi(z\mid x)\,\|\,p(z)) \;=\; \mathcal L, $$</div>
+<p>with equality exactly when $q_\phi(z\mid x)=p_\theta(z\mid x)$ — the gap <em>is</em> a KL divergence. The β-VAE adds a knob $\beta$ on the second term. That single line is the meeting point of the whole track: an <strong>optimization</strong> problem (maximize $\mathcal L$) built entirely out of <strong>inference</strong> and <strong>information</strong> quantities.</p>
+
+<div class="callout c-anchor"><span class="tag">Analogy</span>
+The objective is a <strong>thermostat with two dials fighting over one budget</strong>. One dial (reconstruction) wants to spend everything on fitting the data exactly; the other (KL) wants to stay cheap and simple, close to the prior. $\beta$ is the <em>exchange rate</em> between the two — the price of one unit of &ldquo;fit&rdquo; measured in units of &ldquo;complexity.&rdquo; Turn $\beta$ up and simplicity gets expensive to violate; turn it down and the model splurges on reconstruction. That price is exactly a Lagrange multiplier — the same object that priced constraints back in Pillar II.</div>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>Reading it term by term</h2>
+<p>Take the loss apart and each piece is an old friend:</p>
+<ul>
+  <li><strong>Reconstruction $\mathbb E_q[\log p_\theta(x\mid z)]$</strong> — for a Gaussian decoder this is a squared error; for a categorical one it is <em>cross-entropy</em>. Both are <strong>divergences between the data and the model</strong> (Pillar V): maximizing likelihood is minimizing $D_{\mathrm{KL}}(p_{\text{data}}\|p_\theta)$ (Session 15).</li>
+  <li><strong>KL regularizer $D_{\mathrm{KL}}(q\|p)$</strong> — a divergence again (Pillar V). For Gaussians it has a closed form built from a <strong>trace and a log-determinant</strong> (Pillar I): $D_{\mathrm{KL}}(\mathcal N(\mu,\Sigma)\|\mathcal N(0,I)) = \tfrac12\big(\operatorname{tr}\Sigma + \mu^\top\mu - d - \log\det\Sigma\big)$.</li>
+  <li><strong>The bound itself</strong> — that $\mathcal L\le\log p_\theta(x)$ with a KL gap is the ELBO of Pillar III; the generalization of the bound to unseen data is Pillar IV's concern.</li>
+</ul>
+<div class="callout c-good"><span class="tag">Verified</span>
+The Gaussian KL closed form $\tfrac12(\sigma^2+\mu^2-1-\log\sigma^2)$ equals a two-million-sample Monte-Carlo estimate of $\mathbb E_q[\log q-\log p]$: analytic $0.51083$ vs MC $0.51137$ (E1). The &ldquo;regularizer&rdquo; really is a divergence, and its diagonal-Gaussian form is a trace ($\sum\sigma_i^2$) plus a log-det ($\sum\log\sigma_i^2$).</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="capplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">the rate–distortion frontier traced by β</span></div>
+    <div class="slider-row"><span>β (exchange rate) →</span><input type="range" id="sB" min="0.1" max="6" step="0.1" value="1"></div>
+    <div class="readout">
+      <span><span class="k">KL (rate)</span> = <span class="va" id="rKL">…</span></span>
+      <span><span class="k">distortion</span> = <span class="vd" id="rDist">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — β sweeps a Pareto frontier.</strong> The objective trades <em>rate</em> (KL to the prior, x-axis) against <em>distortion</em> (reconstruction error, y-axis). Each $\beta$ picks one point on the curve; its value is exactly the local slope $\beta=-\,d(\text{distortion})/d(\text{rate})$ — the Lagrange-multiplier reading of β-VAE. Slide β: large β → low rate, high distortion (simple, blurry); small β → high rate, low distortion (detailed, complex).</figcaption>
+</figure>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>β and convex duality</h2>
+<p>Why is a single scalar $\beta$ enough to sweep the whole trade-off? Because it is a <strong>Lagrange multiplier</strong> (Pillar II, Session 6). The honest problem a modeler wants to state is <em>constrained</em>:</p>
+<div class="mathband">$$ \max_{\theta,\phi}\ \mathbb E_q[\log p_\theta(x\mid z)] \quad \text{subject to}\quad D_{\mathrm{KL}}(q_\phi\|p)\le\varepsilon. $$</div>
+<p>Form the Lagrangian $\mathbb E_q[\log p_\theta(x\mid z)] - \beta\big(D_{\mathrm{KL}}(q_\phi\|p)-\varepsilon\big)$; the multiplier $\beta\ge0$ on the KL constraint is the β of β-VAE, and the constant $\beta\varepsilon$ drops out of the optimization. KKT (Session 6) says at the optimum $\beta$ equals the sensitivity of the objective to the constraint — the slope of the frontier in Figure 1. This is the <em>information-bottleneck</em> reading: β sets how many nats of latent &ldquo;rate&rdquo; you are willing to pay for reconstruction fidelity.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Sweeping β on a toy encoder traces exactly the dual curve: as $\beta$ rises $0.2\to4$, the optimal mean shrinks $1.818\to0.667$, the KL (rate) falls $1.653\to0.222$, and reconstruction worsens $-0.033\to-1.778$ (E3). β prices the constraint — larger β buys a smaller KL at the cost of fit.</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Optimizing it — reparameterization &amp; curvature</h2>
+<p>The objective is an expectation over $q_\phi$, and we need gradients through the very distribution we're sampling from. Two ideas from earlier pillars make it work:</p>
+<ul>
+  <li><strong>Reparameterization (Session 18):</strong> write $z=\mu_\phi+\sigma_\phi\odot\epsilon$, $\epsilon\sim\mathcal N(0,I)$ — a change of variables (Session 3's Jacobian, Session 20's flow idea) that moves the randomness off the parameters, so the pathwise gradient flows straight through. It has dramatically lower variance than the generic score-function (REINFORCE) estimator.</li>
+  <li><strong>Curvature (Pillars I–II):</strong> the loss is minimized by SGD/Adam (Sessions 7–8); the <strong>natural gradient</strong> preconditions by the Fisher information $I(\theta)$, and the deep fact is that <em>Fisher information is the curvature (Hessian) of the KL divergence</em> (Session 10). Optimization geometry and inference geometry are the same geometry.</li>
+</ul>
+<div class="callout c-good"><span class="tag">Verified</span>
+For $J(\mu)=\mathbb E_{z\sim\mathcal N(\mu,1)}[z^2]$ (true gradient $2\mu=2.0$), the reparameterization estimator gives $1.984$ with <strong>7.3× lower variance</strong> than the score-function estimator's $2.006$ (E2). And the Fisher information of $\mathcal N(\mu,1)$ equals the curvature of its KL: both are exactly $1.0000$ (E4) — curvature <em>is</em> information.</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>The whole track, living in one loss</h2>
+<p>Every session shows up, and the modern generative families are all specializations of this same objective:</p>
+<ul>
+  <li><strong>VAE (S18):</strong> the objective as written — amortized $q_\phi$, reparameterized, β for disentanglement.</li>
+  <li><strong>Diffusion (S19):</strong> a deep hierarchy of latents $x_1,\dots,x_T$ whose ELBO reduces to the reweighted denoising loss $\sum_t\lVert\epsilon-\epsilon_\theta\rVert^2$ — the same bound, unrolled.</li>
+  <li><strong>Normalizing flows (S20):</strong> take the KL to zero by making $q$ <em>exact</em> and invertible — the bound becomes an equality and $\mathcal L=\log p_\theta(x)$ exactly.</li>
+  <li><strong>Pillars I–II</strong> supply the trace/log-det KL and the optimizer's curvature; <strong>III</strong> the bound; <strong>IV</strong> its generalization; <strong>V</strong> the divergences (KL, and its Wasserstein cousin in S16 for stable training); <strong>VI</strong> the models.</li>
+  <li><strong>In practice:</strong> this template underlies VAEs, diffusion models, variational Bayesian neural nets, the information bottleneck, and rate–distortion autoencoders across vision, audio, and language.</li>
+</ul>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+rng = np.random.default_rng(<span class="n">0</span>)
+
+<span class="c"># KL(N(mu,s^2) || N(0,1)) — closed form (trace + log-det) vs Monte Carlo</span>
+mu, s = <span class="n">0.8</span>, <span class="n">0.6</span>
+kl = <span class="n">0.5</span>*(s*s + mu*mu - <span class="n">1</span> - np.log(s*s))
+z = mu + s*rng.standard_normal(<span class="n">2_000_000</span>)
+mc = np.mean((-<span class="n">0.5</span>*np.log(<span class="n">2</span>*np.pi*s*s) - <span class="n">0.5</span>*((z-mu)/s)**<span class="n">2</span>)
+             -(-<span class="n">0.5</span>*np.log(<span class="n">2</span>*np.pi) - <span class="n">0.5</span>*z**<span class="n">2</span>))
+<span class="f">print</span>(<span class="f">round</span>(kl,<span class="n">5</span>), <span class="f">round</span>(mc,<span class="n">5</span>))          <span class="c"># 0.51083 0.51137</span>
+
+<span class="c"># reparameterization gradient vs score-function — same mean, far less variance</span>
+mu0, Ns = <span class="n">1.0</span>, <span class="n">20000</span>
+g_rep = <span class="n">2</span>*(mu0 + rng.standard_normal(Ns))          <span class="c"># pathwise d/dmu (mu+eps)^2</span>
+zc = mu0 + rng.standard_normal(Ns)
+g_sf  = (zc**<span class="n">2</span>)*(zc - mu0)                        <span class="c"># score-function estimator</span>
+<span class="f">print</span>(<span class="f">round</span>(g_rep.mean(),<span class="n">3</span>), <span class="f">round</span>(g_sf.mean(),<span class="n">3</span>),
+      <span class="f">round</span>(g_sf.var()/g_rep.var(),<span class="n">1</span>))     <span class="c"># 1.984 2.006 7.3  (true grad = 2.0)</span></pre>
+<div class="out">0.51083 0.51137
+1.984 2.006 7.3        # reparam ≈ score in mean, 7.3x lower variance</div>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+The ELBO is <strong>cheap per step</strong>: one (or a few) latent samples via reparameterization, a Gaussian KL in closed form ($O(d)$ for diagonal covariance — a sum, no matrix inverse), and one forward/backward pass. The expensive choices are structural: a <em>full-covariance</em> KL costs an $O(d^3)$ log-det (Pillar I), the <em>natural gradient</em> needs the $d\times d$ Fisher (approximated by K-FAC / diagonal in practice), and Monte-Carlo terms trade sample count against gradient variance — which is exactly why reparameterization's variance reduction matters.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="2">
+  <div class="qz">In the β-ELBO, what <em>is</em> β, mathematically?</div>
+  <button class="opt">A learning rate for the KL term.</button>
+  <button class="opt">The temperature of the decoder.</button>
+  <button class="opt">A Lagrange multiplier on a KL (rate) constraint — the frontier's slope.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="0">
+  <div class="qz">Fisher information equals…</div>
+  <button class="opt">the curvature (Hessian) of the KL divergence at the parameter.</button>
+  <button class="opt">the variance of the data.</button>
+  <button class="opt">the reconstruction error.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Posterior collapse:</strong> if the decoder is too powerful, the KL is driven to $0$ and $z$ is ignored — the encoder learns nothing. KL-annealing (ramp β from $0$) or a floor (&ldquo;free bits&rdquo;) fixes it.</li>
+  <li><strong>β too large</strong> over-regularizes: crisp reconstructions vanish (the high-β, high-distortion end of Figure 1).</li>
+  <li><strong>The bound is loose</strong> when $q_\phi$ can't match the true posterior — flows or richer $q$ tighten it (Session 12/20).</li>
+  <li><strong>KL is asymmetric</strong> (Session 15): $D_{\mathrm{KL}}(q\|p)$ (used here, mode-seeking) differs from $D_{\mathrm{KL}}(p\|q)$; the choice shapes what the model does.</li>
+  <li><strong>Score-function gradients</strong> are unbiased but high-variance — use reparameterization whenever the latent is continuous and differentiable.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Treating the terms as unrelated penalties</span>Reconstruction and KL are both <em>divergences</em>, and the whole loss is a single lower bound on $\log p(x)$ — not an ad-hoc loss plus a regularizer. The structure is what guarantees you're doing (approximate) maximum likelihood.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Forgetting β is a multiplier, not a hyperparameter to grid blindly</span>β has a meaning — the exchange rate / frontier slope. Reading it as a Lagrange multiplier tells you <em>which</em> constraint you're imposing (a rate budget) and why the sweep is a Pareto curve.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Ignoring the geometry</span>Plain gradient steps ignore that Fisher = curvature of the KL. In ill-conditioned problems, natural-gradient / preconditioned methods (Pillar II) converge far faster — the same lesson as second-order optimization.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>The <strong>ELBO</strong> is a lower bound on $\log p(x)$; the gap is a KL — maximizing it is approximate MLE.</li>
+  <li>Both terms are <strong>divergences</strong>; the Gaussian KL is a <strong>trace + log-det</strong>.</li>
+  <li><strong>β is a Lagrange multiplier</strong> on a KL/rate constraint — it traces a Pareto frontier.</li>
+  <li><strong>Reparameterize</strong> continuous latents — same mean, far lower gradient variance than score-function.</li>
+  <li><strong>Fisher = curvature of KL</strong>: optimization geometry and inference geometry coincide.</li>
+  <li>VAEs, diffusion, and flows are <strong>specializations</strong> of this one objective.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- SECOND VIEW -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 640 250" role="img" aria-label="six pillars feeding into one training objective">
+  <defs><marker id="cf" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5A4FCF"/></marker></defs>
+  <g font-family="Inter, sans-serif" font-size="11" text-anchor="middle">
+    <!-- pillar chips -->
+    <g fill="rgba(14,140,128,.12)" stroke="#0E8C80">
+      <rect x="20"  y="20" width="150" height="30" rx="9"/>
+      <rect x="20"  y="60" width="150" height="30" rx="9"/>
+      <rect x="20"  y="100" width="150" height="30" rx="9"/>
+      <rect x="20"  y="140" width="150" height="30" rx="9"/>
+      <rect x="20"  y="180" width="150" height="30" rx="9"/>
+      <rect x="20"  y="220" width="150" height="26" rx="9"/>
+    </g>
+    <g fill="#26252E">
+      <text x="95" y="39">I · trace &amp; log-det KL</text>
+      <text x="95" y="79">II · duality → β</text>
+      <text x="95" y="119">III · the ELBO bound</text>
+      <text x="95" y="159">IV · generalization</text>
+      <text x="95" y="199">V · divergences</text>
+      <text x="95" y="237">VI · VAE / diffusion / flow</text>
+    </g>
+    <!-- arrows to center -->
+    <g stroke="#5A4FCF" stroke-width="1.6" fill="none">
+      <path d="M170,35 C260,60 300,110 372,120" marker-end="url(#cf)"/>
+      <path d="M170,75 C260,90 300,112 372,124" marker-end="url(#cf)"/>
+      <path d="M170,115 C240,120 300,122 372,127" marker-end="url(#cf)"/>
+      <path d="M170,155 C260,150 300,138 372,132" marker-end="url(#cf)"/>
+      <path d="M170,195 C260,180 300,150 372,136" marker-end="url(#cf)"/>
+      <path d="M170,233 C260,210 300,160 372,140" marker-end="url(#cf)"/>
+    </g>
+    <!-- central objective -->
+    <rect x="378" y="95" width="238" height="70" rx="14" fill="rgba(90,79,207,.14)" stroke="#5A4FCF" stroke-width="2"/>
+    <text x="497" y="122" font-family="JetBrains Mono, monospace" font-size="12" fill="#26252E">L = E[log p(x|z)]</text>
+    <text x="497" y="144" font-family="JetBrains Mono, monospace" font-size="12" fill="#26252E">    − β·KL(q‖p)</text>
+    <text x="497" y="185" fill="#6E6C7A" font-size="11">one objective, six pillars</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">Each pillar contributes one piece of the same training objective</div>
+</div>
+<figcaption><strong>Figure 2 — Six pillars, one loss.</strong> A second view of the whole track: linear algebra supplies the KL's trace/log-det, duality supplies β, inference supplies the bound, learning theory its generalization, information theory the divergences, and the generative families are the models — all converging on a single line of math.</figcaption>
+</figure>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Assemble the pieces of the objective yourself.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Verify the Gaussian KL closed form against Monte Carlo for $\mathcal N(0.8,0.6^2)\|\mathcal N(0,1)$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">mu,s=<span class="n">0.8</span>,<span class="n">0.6</span>; kl=<span class="n">0.5</span>*(s*s+mu*mu-<span class="n">1</span>-np.log(s*s))
+z=mu+s*rng.standard_normal(<span class="n">2_000_000</span>)
+mc=np.mean((-<span class="n">0.5</span>*np.log(<span class="n">2</span>*np.pi*s*s)-<span class="n">0.5</span>*((z-mu)/s)**<span class="n">2</span>)
+           -(-<span class="n">0.5</span>*np.log(<span class="n">2</span>*np.pi)-<span class="n">0.5</span>*z**<span class="n">2</span>))
+kl, mc          <span class="c"># 0.51083, 0.51137</span></pre>
+    <p>The closed form is a trace ($\sigma^2$) + log-det ($\log\sigma^2$) + a mean term — exact, no sampling needed in practice.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-m">medium</span><p>Compare reparameterization and score-function gradient estimators of $\nabla_\mu\mathbb E_{z\sim\mathcal N(\mu,1)}[z^2]$ (true value $2\mu$).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">mu0,Ns=<span class="n">1.0</span>,<span class="n">20000</span>
+g_rep=<span class="n">2</span>*(mu0+rng.standard_normal(Ns))          <span class="c"># pathwise</span>
+zc=mu0+rng.standard_normal(Ns); g_sf=(zc**<span class="n">2</span>)*(zc-mu0)
+g_rep.mean(), g_sf.mean(), g_sf.var()/g_rep.var()  <span class="c"># 1.984, 2.006, 7.3</span></pre>
+    <p>Both are unbiased (mean ≈ 2.0); reparameterization has ~7× lower variance, which is why VAEs use it.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Sweep β and show it traces the rate–distortion frontier (toy: reconstruction $-(\mu-2)^2$, rate $\tfrac12\mu^2$).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">for</span> beta <span class="k">in</span> [<span class="n">0.2</span>,<span class="n">0.5</span>,<span class="n">1</span>,<span class="n">2</span>,<span class="n">4</span>]:
+    mu=<span class="n">2</span>*<span class="n">2</span>/(<span class="n">2</span>+beta)               <span class="c"># argmax of -(mu-2)^2 - beta*0.5*mu^2</span>
+    <span class="f">print</span>(beta, <span class="f">round</span>(mu,<span class="n">3</span>), <span class="f">round</span>(<span class="n">0.5</span>*mu*mu,<span class="n">3</span>), <span class="f">round</span>(-(mu-<span class="n">2</span>)**<span class="n">2</span>,<span class="n">3</span>))
+<span class="c"># 0.2 1.818 1.653 -0.033 ... 4 0.667 0.222 -1.778</span></pre>
+    <p>Larger β ⇒ smaller rate (KL), larger distortion — β is exactly the frontier's slope (a Lagrange multiplier).</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-h">hard</span><p>Show Fisher information of $\mathcal N(\mu,1)$ equals the curvature of the KL at the same point.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">mu0,h=<span class="n">0.5</span>,<span class="n">1e-4</span>; KL=<span class="k">lambda</span> m:<span class="n">0.5</span>*(m-mu0)**<span class="n">2</span>   <span class="c"># KL(N(m,1)||N(mu0,1))</span>
+(KL(mu0+h)-<span class="n">2</span>*KL(mu0)+KL(mu0-h))/h**<span class="n">2</span>            <span class="c"># 1.0000 == Fisher I(mu)=1</span></pre>
+    <p>The Fisher information is the Hessian of the KL — the bridge between Pillar II (curvature) and Pillars III/V (inference &amp; divergence).</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>In one paragraph, trace each of the six pillars to a specific piece of the β-ELBO.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p><strong>I (linear algebra):</strong> the Gaussian KL as trace + log-det, and the Fisher/curvature preconditioner. <strong>II (duality):</strong> β as a Lagrange multiplier on the KL constraint. <strong>III (inference):</strong> the ELBO bound and amortized $q_\phi$. <strong>IV (learning theory):</strong> generalization of the bound to held-out data. <strong>V (information):</strong> both terms are divergences; MLE = minimizing $D_{\mathrm{KL}}(p_{\text{data}}\|p_\theta)$. <strong>VI (generative):</strong> VAE is the bound itself, diffusion is its unrolled hierarchy, flows drive the gap to zero. One loss, six pillars.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- INTERVIEW -->
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · Derive the ELBO and say where the bound comes from.</div><div class="a">$\log p_\theta(x)=\mathbb E_{q}[\log p_\theta(x\mid z)] - D_{\mathrm{KL}}(q\|p) + D_{\mathrm{KL}}(q\|p_\theta(z\mid x))$. Dropping the last (non-negative) KL gives the ELBO; the gap is exactly that posterior KL, so the bound is tight when $q$ equals the true posterior.</div></div>
+<div class="qa"><div class="q">Q2 · What is β in a β-VAE, really?</div><div class="a">A Lagrange multiplier on a KL (rate) constraint. Sweeping it traces a rate–distortion Pareto frontier; its value is the frontier's slope $-\,d(\text{distortion})/d(\text{rate})$.</div></div>
+<div class="qa"><div class="q">Q3 · Why the reparameterization trick?</div><div class="a">It moves stochasticity into a parameter-free $\epsilon$ so gradients flow pathwise through $z=\mu+\sigma\epsilon$; the estimator is unbiased and has far lower variance than the score-function/REINFORCE estimator (here ~7×).</div></div>
+<div class="qa"><div class="q">Q4 · How are optimization and inference connected here?</div><div class="a">Fisher information is the curvature (Hessian) of the KL divergence. The natural gradient preconditions by the Fisher, so the geometry that governs how fast you optimize is the same geometry that measures distance between distributions.</div></div>
+<div class="qa"><div class="q">Q5 · How do diffusion and flows relate to this objective?</div><div class="a">Diffusion is a deep latent hierarchy whose ELBO reduces to the reweighted denoising loss; normalizing flows make $q$ exact and invertible so the KL gap vanishes and $\mathcal L=\log p_\theta(x)$ exactly. Both are the same bound, specialized.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Piece of the loss</th><th>Pillar it comes from</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>ELBO / bound on $\log p(x)$</td><td>III · Inference</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Both terms are divergences</td><td>V · Information theory</td><td class="freq f-h">High</td></tr>
+  <tr><td>Gaussian KL = trace + log-det</td><td>I · Linear algebra</td><td class="freq f-h">High</td></tr>
+  <tr><td>β = Lagrange multiplier</td><td>II · Duality</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Reparameterization gradient</td><td>I / III</td><td class="freq f-h">High</td></tr>
+  <tr><td>Fisher = curvature of KL</td><td>I–II / III</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>VAE / diffusion / flow instances</td><td>VI · Generative</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">One objective; every pillar is a term inside it.</div>
+  <p><span class="cc-sub">Reusable idea:</span> modern probabilistic ML fits into a single template — maximize a lower bound made of divergences, priced by a multiplier, optimized with the right geometry.</p>
+  <ul>
+    <li><strong>The loss:</strong> $\mathcal L=\mathbb E_q[\log p_\theta(x\mid z)]-\beta\,D_{\mathrm{KL}}(q\|p)$ — a lower bound on $\log p(x)$.</li>
+    <li><strong>Both terms are divergences</strong> (V); the Gaussian KL is a trace + log-det (I).</li>
+    <li><strong>β is a Lagrange multiplier</strong> (II) tracing a rate–distortion frontier.</li>
+    <li><strong>Reparameterize</strong> for low-variance gradients (I/III); <strong>Fisher = curvature of KL</strong> unifies optimization and inference.</li>
+    <li><strong>VAE, diffusion, flows</strong> (VI) are all specializations of this one line.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> the six pillars were never separate — they are the terms of one training objective, and once you can read that objective term by term, you can read almost any modern probabilistic model.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">★ Track complete</span>
+  <h3>You've finished Math for ML · Advanced.</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">Twenty-one sessions across six pillars, from eigendecompositions to diffusion — and, at the end, one objective that holds them all. <a href="../index.html">Back to the track overview →</a></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

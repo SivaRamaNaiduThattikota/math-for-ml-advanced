@@ -30,5 +30,5 @@ window.MFML_SESSIONS = [
   ["gen","18","18_vae","Variational autoencoders","The reparameterization trick and the ELBO, put to work.",true],
   ["gen","19","19_diffusion","Diffusion models & score matching","Learning to reverse noise — SDEs, scores, and denoising.",true],
   ["gen","20","20_normalizing_flows","Normalizing flows & change of variables","Exact likelihoods by tracking how densities warp.",true],
-  ["cap","★","21_capstone","Capstone: optimization meets inference","How curvature, duality, and divergences fuse in one modern training objective.",false],
+  ["cap","★","21_capstone","Capstone: optimization meets inference","How curvature, duality, and divergences fuse in one modern training objective.",true],
 ].map(([group,num,slug,title,desc,ready])=>({group,num,slug,title,desc,ready}));
