@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Generalization Bounds & Rademacher Complexity · Math for ML · Advanced</title>
+<meta name="description" content="Data-dependent, often tighter guarantees than VC: Rademacher complexity measures a class's ability to fit noise, margin bounds explain SVMs, and 'fitting random labels' reframes deep-net generalization.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Generalization Bounds & Rademacher Complexity · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="14_generalization_bounds">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Why VC isn't enough</a>
+  <a href="#s2">2 · Rademacher complexity</a>
+  <a href="#s3">3 · The bound</a>
+  <a href="#s4">4 · Margins & norms</a>
+  <a href="#s5">5 · Fitting random labels</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Learning Theory · 14</div>
+    <h1>Generalization Bounds &amp; Rademacher Complexity</h1>
+    <p class="lede">VC dimension gives one worst-case number for a whole class. Rademacher complexity does better: a data-dependent measure of how well a model class can fit pure noise — tighter bounds, margin theory, and the modern puzzle of why deep nets generalize.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Session 13</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Session 13's VC bounds are correct but blunt — one worst-case capacity number, ignoring the actual data and often wildly loose. <strong>Rademacher complexity</strong> sharpens the picture: it measures, on <em>your</em> data, how well the model class can correlate with random ±1 noise. A class that can fit any noise has high complexity and won't generalize; a constrained one has low complexity and does. It yields data-dependent bounds, explains why <em>margins</em> (not just parameter counts) control generalization, and frames the famous observation that deep nets can memorize random labels.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Explain why VC bounds are loose and what "data-dependent" buys you.</li>
+    <li>Define empirical <strong>Rademacher complexity</strong> as a class's ability to fit random signs.</li>
+    <li>State the Rademacher generalization bound and its $1/\sqrt n$ scaling.</li>
+    <li>Explain <strong>margin</strong>/norm-based bounds and why they're often dimension-free.</li>
+    <li>Interpret "deep nets fit random labels" and what it means for classical bounds.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Mohri, Rostamizadeh &amp; Talwalkar, <em>Foundations of ML</em> <span class="secs">Ch 3 (Rademacher, margin bounds)</span>; Shalev-Shwartz &amp; Ben-David <span class="secs">Ch 26</span>; Bartlett &amp; Mendelson 2002; Zhang et al. 2017 (random labels).</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Why VC isn't enough</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">Rademacher complexity</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">The generalization bound</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Margin- &amp; norm-based bounds</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Fitting random labels</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$\sigma_i$</span><span class="def">Rademacher variable — random $\pm1$ with equal probability (pure noise labels).</span>
+    <span class="sym">$\hat{\mathcal R}_S(\mathcal H)$</span><span class="def">Empirical Rademacher complexity of class $\mathcal H$ on sample $S$.</span>
+    <span class="sym">$L(h),\ \hat L(h)$</span><span class="def">True risk and empirical (training) risk.</span>
+    <span class="sym">margin</span><span class="def">$y\,f(x)$ — signed confidence; large margin = confident correct.</span>
+    <span class="sym">McDiarmid</span><span class="def">Concentration inequality: a stable function of many samples is close to its mean.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Why VC dimension isn't the whole story</h2>
+<p>VC bounds (Session 13) have two weaknesses. They're <strong>worst-case over all data distributions</strong>, so they ignore that your actual data might be easy. And they depend only on a combinatorial capacity number, missing that a huge class used <em>gently</em> (small weights, large margins) behaves like a small one. The result: VC bounds for real models are often numerically useless — they might promise a gap of "$\le 5$" for an error in $[0,1]$.</p>
+<p>We want a complexity measure that looks at the <em>actual sample</em> and the <em>way</em> the class is used. That's Rademacher complexity.</p>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>Rademacher complexity — can the class fit noise?</h2>
+<p>Draw random $\pm1$ labels $\sigma_i$ (pure noise). Ask: how well can the best hypothesis in $\mathcal H$ correlate with them?</p>
+<div class="mathband">$$ \hat{\mathcal R}_S(\mathcal H) = \mathbb E_{\sigma}\!\left[\ \sup_{h\in\mathcal H}\ \frac1n\sum_{i=1}^n \sigma_i\,h(x_i)\ \right]. $$</div>
+<p>If the class can match almost any random labeling, the sup is near 1 — <strong>high complexity</strong>. If it's too rigid to chase noise, the correlation stays near 0 — <strong>low complexity</strong>. It's a direct, data-dependent measure of "capacity to overfit."</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+The class of <em>all</em> functions can set $h(x_i)=\operatorname{sign}(\sigma_i)$, giving $\tfrac1n\sum|\sigma_i|=1$ — so its Rademacher complexity is exactly $\mathbf{1}$ (fits any noise perfectly, generalizes not at all). By contrast, bounded-norm linear predictors have $\hat{\mathcal R}_S$ that <em>shrinks with data</em>: $0.61,\ 0.31,\ 0.13,\ 0.066$ at $n=10,50,250,1000$ — closely tracking $\sqrt{d/n}$ (E1/E2).</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="radplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">bounded-norm linear predictors — Rademacher ≈ √(d/n)</span></div>
+    <div class="slider-row"><span>n (samples)</span><input type="range" id="sN" min="5" max="400" step="5" value="50"><span>d (capacity)</span><input type="range" id="sD" min="1" max="20" step="1" value="5"></div>
+    <div class="readout">
+      <span><span class="k">R̂ at n</span> = <span class="va" id="rR">…</span></span>
+      <span><span class="k">≈ gen. gap bound (2R̂)</span> = <span class="vd" id="rGap">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Complexity falls with data, rises with capacity.</strong> The curve is Rademacher complexity $\approx\sqrt{d/n}$ as a function of sample size $n$; the dot marks your current $n$. More <em>data</em> pulls it down like $1/\sqrt n$ (the class can fit less of the noise per point); more <em>capacity</em> $d$ lifts the whole curve. The generalization gap is bounded by about $2\hat{\mathcal R}_S$ — so this curve <em>is</em> the promise of how far test error can stray from training error.</figcaption>
+</figure>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>The generalization bound</h2>
+<p>Rademacher complexity plugs into a clean, high-probability bound. With probability $\ge1-\delta$, for <em>all</em> $h\in\mathcal H$ simultaneously (loss in $[0,1]$):</p>
+<div class="mathband">$$ L(h) \ \le\ \hat L(h) + 2\,\hat{\mathcal R}_S(\mathcal H) + 3\sqrt{\frac{\ln(2/\delta)}{2n}}. $$</div>
+<p>Three pieces: your <strong>training error</strong> $\hat L(h)$, twice the <strong>Rademacher complexity</strong> (the capacity penalty), and a <strong>concentration term</strong> from McDiarmid's inequality that decays as $1/\sqrt n$. The whole thing is data-dependent through $\hat{\mathcal R}_S$, and it applies uniformly, so it justifies picking $h$ by minimizing training error <em>within a controlled-complexity class</em>.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Both the Rademacher term and the concentration term scale like $1/\sqrt n$: $\sqrt{1/n}=0.10,\ 0.032,\ 0.010$ at $n=100,10^3,10^4$ (E4). Quadruple the data, halve the gap — the same $1/\sqrt n$ law from Sessions 10 and 13.</div>
+<aside class="side"><span class="lbl">Rademacher ≤ VC</span>By Massart's lemma, $\hat{\mathcal R}_S(\mathcal H)\le O(\sqrt{\text{VC}/n})$ — so Rademacher <em>recovers</em> the VC bound, but because it's data-dependent it's usually tighter, and it extends cleanly to real-valued and margin-based classes.</aside>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Margins &amp; norms — dimension-free bounds</h2>
+<p>The real power: for the class of linear predictors with bounded norm $\lVert w\rVert\le B$ on inputs with $\lVert x\rVert\le R$,</p>
+<div class="mathband">$$ \hat{\mathcal R}_S(\mathcal H) \ \le\ \frac{B\,R}{\sqrt n}. $$</div>
+<p>Notice what's <em>absent</em>: the dimension $d$. The bound depends on the <strong>norms</strong>, not the number of features — so a large-margin classifier in a million-dimensional (or infinite kernel) space can still generalize. This is the theory behind the <strong>SVM</strong>: maximizing the margin minimizes $B$ (the norm needed to achieve that margin), which shrinks Rademacher complexity, which tightens the bound. "Large margin ⇒ good generalization" is a Rademacher statement.</p>
+<div class="callout c-anchor"><span class="tag">Why this matters for deep learning</span>
+Parameter count is a terrible capacity proxy for neural nets (billions of params, yet they generalize). Norm- and margin-based Rademacher bounds — controlling the <em>size</em> of the weights and the <em>margin</em> of the predictions — are far better explanations. Implicit regularization from SGD (Session 07) keeps norms small, which is part of why over-parameterized nets don't overfit as VC would predict.</p></div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>The random-label puzzle</h2>
+<p>A landmark experiment (Zhang et al., 2017): take a deep net that generalizes well, and train it on data with the labels <strong>randomly shuffled</strong>. It reaches <em>zero training error</em> — it memorizes pure noise. That means its Rademacher complexity is $\approx1$, so the classical uniform bounds above are <strong>vacuous</strong> for it (they'd promise a gap near 1).</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+A least-squares classifier on $n=80$ points with <em>random</em> $\pm1$ labels: at capacity $d=5$ it gets $61\%$ train accuracy (can't fit the noise), at $d=20$ → $72\%$, and at $d=n=80$ it <strong>interpolates</strong> — $100\%$ train accuracy on pure noise (E3). Enough capacity fits any labeling; that's Rademacher $\approx1$ made concrete.</div>
+<p>The resolution isn't that the theory is wrong — it's that <em>capacity alone</em> doesn't explain generalization. What saves real training is the <strong>data</strong> (real labels are learnable structure, not noise) plus <strong>implicit bias</strong> (SGD + small norms + margins find low-complexity solutions among the many that fit). Generalization is a property of the algorithm-and-data, not just the hypothesis class — the frontier this pillar points toward.</p>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+rng = np.random.default_rng(<span class="n">0</span>)
+
+<span class="c"># empirical Rademacher of bounded-norm linear predictors: (B/n)*E||sum sigma_i x_i||</span>
+d, B = <span class="n">5</span>, <span class="n">1.0</span>
+<span class="k">for</span> n <span class="k">in</span> (<span class="n">10</span>, <span class="n">50</span>, <span class="n">250</span>, <span class="n">1000</span>):
+    X = rng.standard_normal((n, d))
+    R = np.mean([B/n*np.linalg.norm(rng.choice([-<span class="n">1.</span>,<span class="n">1.</span>], n) @ X) <span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">400</span>)])
+    <span class="f">print</span>(n, <span class="f">round</span>(R,<span class="n">4</span>), <span class="f">round</span>(np.sqrt(d/n),<span class="n">4</span>))   <span class="c"># tracks sqrt(d/n)</span>
+
+<span class="c"># capacity to fit RANDOM labels == Rademacher, in practice</span>
+n = <span class="n">80</span>
+<span class="k">for</span> d <span class="k">in</span> (<span class="n">5</span>, <span class="n">20</span>, <span class="n">80</span>):
+    X = rng.standard_normal((n, d)); y = rng.choice([-<span class="n">1.</span>,<span class="n">1.</span>], n)
+    w = np.linalg.lstsq(X, y, rcond=<span class="k">None</span>)[<span class="n">0</span>]
+    <span class="f">print</span>(d, np.mean(np.sign(X@w)==y))    <span class="c"># 0.61, 0.72, 1.00 (interpolates noise)</span></pre>
+<div class="out">10 0.6092 0.7071
+50 0.3084 0.3162
+250 0.1285 0.1414
+1000 0.0658 0.0707
+5 0.6125
+20 0.725
+80 1.0</div>
+
+<div class="callout c-good"><span class="tag">The practical read</span>
+Two data-independent levers still dominate in practice: <strong>more data</strong> ($\hat{\mathcal R}\propto1/\sqrt n$) and <strong>smaller norms/larger margins</strong> ($\hat{\mathcal R}\propto B$). Weight decay, margin losses, and early stopping all shrink $B$; that's regularization as complexity control, seen through Rademacher.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">A hypothesis class that can fit <em>any</em> random labeling of the data has Rademacher complexity close to…</div>
+  <button class="opt">0.</button>
+  <button class="opt">1 — and correspondingly weak generalization guarantees.</button>
+  <button class="opt">the number of features.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">Margin/norm-based Rademacher bounds for linear predictors are notable because they…</div>
+  <button class="opt">depend heavily on the input dimension.</button>
+  <button class="opt">depend on norms (B·R/√n), not the dimension — so they can be dimension-free.</button>
+  <button class="opt">only apply to decision trees.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Rademacher is data-dependent:</strong> it's defined on the sample you have, so it can (and should) be estimated empirically, not just bounded.</li>
+  <li><strong>Bounds are for loss in $[0,1]$;</strong> using unbounded losses needs extra care (clipping, sub-Gaussian assumptions).</li>
+  <li><strong>Uniform bounds can be vacuous</strong> for very expressive classes (deep nets fitting random labels) — not wrong, just uninformative there.</li>
+  <li><strong>Margins are what to track</strong> for over-parameterized models, not parameter counts.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Reading a loose bound as a prediction</span>These are worst-case upper bounds; a large bound doesn't mean the model <em>will</em> generalize poorly, only that the guarantee is weak. Measure the held-out gap.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Equating parameter count with capacity</span>Rademacher depends on norms/margins; a billion-parameter net with small weights can have low effective complexity.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Forgetting the data half of generalization</span>Capacity bounds ignore that real labels carry learnable structure; generalization is about algorithm + data, not the class alone.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li><strong>Rademacher complexity</strong> = expected best correlation with random $\pm1$ labels — capacity to fit noise, on your data.</li>
+  <li>Bound: $L(h)\le\hat L(h)+2\hat{\mathcal R}_S+3\sqrt{\ln(2/\delta)/2n}$; everything decays as $1/\sqrt n$.</li>
+  <li><strong>$\hat{\mathcal R}_S\le O(\sqrt{\text{VC}/n})$</strong> — recovers VC, usually tighter, data-dependent.</li>
+  <li><strong>Margin/norm bounds</strong> ($\le BR/\sqrt n$) are dimension-free — the theory behind SVMs and large-margin nets.</li>
+  <li>Expressive models can fit random labels ($\hat{\mathcal R}\approx1$) — generalization then comes from <strong>data + implicit bias</strong>, not capacity.</li>
+  <li>Shrink complexity with <strong>more data</strong> or <strong>smaller norms/bigger margins</strong> (weight decay, margin loss).</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Estimate complexity and watch it decay.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-m">medium</span><p>Estimate the empirical Rademacher complexity of bounded-norm linear predictors for $n=10,50,250$ and compare to $\sqrt{d/n}$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">d,B=<span class="n">5</span>,<span class="n">1.0</span>
+<span class="k">for</span> n <span class="k">in</span> (<span class="n">10</span>,<span class="n">50</span>,<span class="n">250</span>):
+    X=rng.standard_normal((n,d))
+    R=np.mean([B/n*np.linalg.norm(rng.choice([-<span class="n">1.</span>,<span class="n">1.</span>],n)@X) <span class="k">for</span> _ <span class="k">in</span> <span class="f">range</span>(<span class="n">400</span>)])
+    <span class="f">print</span>(n, R)      <span class="c"># 0.61, 0.31, 0.13 ~ sqrt(d/n)</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Argue that the Rademacher complexity of the class of all $\pm1$ functions is exactly 1.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>For any $\sigma$, the sup over all functions is achieved by $h(x_i)=\operatorname{sign}(\sigma_i)$, giving $\tfrac1n\sum\sigma_i\operatorname{sign}(\sigma_i)=\tfrac1n\sum|\sigma_i|=1$. Taking the expectation over $\sigma$ still gives 1. Maximal complexity ⇒ fits any noise ⇒ no generalization guarantee.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Show that a least-squares classifier interpolates random labels once $d=n$, and interpret via Rademacher.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">n=<span class="n">80</span>
+<span class="k">for</span> d <span class="k">in</span> (<span class="n">5</span>,<span class="n">20</span>,<span class="n">80</span>):
+    X=rng.standard_normal((n,d)); y=rng.choice([-<span class="n">1.</span>,<span class="n">1.</span>],n)
+    w=np.linalg.lstsq(X,y,rcond=<span class="k">None</span>)[<span class="n">0</span>]; <span class="f">print</span>(d, np.mean(np.sign(X@w)==y))
+<span class="c"># 0.61, 0.72, 1.00</span></pre>
+    <p>At $d=n$, $X$ is (generically) invertible so $Xw=y$ exactly — perfect fit to <em>random</em> labels. Capacity to fit noise = Rademacher $\approx1$; the class guarantees nothing on its own.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-e">easy</span><p>Verify the $1/\sqrt n$ decay of the concentration term for $n=100,10^3,10^4$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">[np.sqrt(<span class="n">1</span>/n) <span class="k">for</span> n <span class="k">in</span> (<span class="n">100</span>,<span class="n">1000</span>,<span class="n">10000</span>)]   <span class="c"># [0.10, 0.032, 0.010]</span></pre>
+    <p>Each $10\times$ more data cuts the term by $\sqrt{10}\approx3.16$ — the universal statistical-learning rate.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Explain why a large-margin classifier can generalize in very high (or infinite) dimension, using the $BR/\sqrt n$ bound.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>The Rademacher bound for norm-bounded linear predictors is $\le BR/\sqrt n$, with <em>no</em> explicit dimension. Achieving margin $\gamma$ on unit-norm data needs $\lVert w\rVert\approx1/\gamma$, so a <em>larger margin</em> means a <em>smaller</em> $B$, hence smaller complexity and a tighter gap — independent of $d$. That's why an SVM (or kernel SVM in an infinite-dimensional feature space) generalizes: it's controlled by the margin, not the dimension. The kernel trick (Session 06) lives here.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>SVMs:</strong> max-margin = min-norm = min Rademacher complexity — this is the generalization argument.</li>
+  <li><strong>Regularization:</strong> weight decay and margin losses shrink $B$, i.e. shrink complexity.</li>
+  <li><strong>Deep-net generalization research:</strong> norm/margin-based bounds and implicit bias, not VC/parameter counts.</li>
+  <li><strong>Data valuation:</strong> the $1/\sqrt n$ law quantifies the return on more labeled data.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What is Rademacher complexity?</div><div class="a">The expected best correlation of a hypothesis class with random $\pm1$ labels on the sample — a data-dependent measure of the class's ability to fit noise.</div></div>
+<div class="qa"><div class="q">Q2 · How does it improve on VC bounds?</div><div class="a">It's data-dependent (uses your sample) and extends to real-valued/margin classes, so it's usually tighter; and $\hat{\mathcal R}_S\le O(\sqrt{\text{VC}/n})$ recovers VC as a special case.</div></div>
+<div class="qa"><div class="q">Q3 · Why are margin bounds dimension-free?</div><div class="a">For norm-bounded linear predictors $\hat{\mathcal R}_S\le BR/\sqrt n$ — it depends on the weight/input norms, not the dimension, so large-margin (small-norm) classifiers generalize even in huge/infinite dimension.</div></div>
+<div class="qa"><div class="q">Q4 · What did "deep nets fit random labels" show?</div><div class="a">Their Rademacher complexity is ≈1 (they memorize noise), so classical uniform bounds are vacuous — generalization must come from data structure + implicit bias, not capacity alone.</div></div>
+<div class="qa"><div class="q">Q5 · What controls the generalization gap in practice?</div><div class="a">More data ($1/\sqrt n$) and smaller norms / larger margins ($\propto B$) — realized by weight decay, margin losses, and early stopping.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Rademacher complexity</td><td>Data-dependent capacity; tighter bounds</td><td class="freq f-h">High</td></tr>
+  <tr><td>$L\le\hat L+2\hat{\mathcal R}+O(1/\sqrt n)$</td><td>The generalization guarantee</td><td class="freq f-h">High</td></tr>
+  <tr><td>Rademacher ≤ √(VC/n)</td><td>Connects to Session 13</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>Margin/norm bounds ($BR/\sqrt n$)</td><td>SVMs; dimension-free generalization</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Fitting random labels</td><td>Why VC/param-count fails for deep nets</td><td class="freq f-h">High</td></tr>
+  <tr><td>Norms &amp; data as levers</td><td>Regularization &amp; data strategy</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Complexity = how well the class fits pure noise.</div>
+  <p><span class="cc-sub">Reusable idea:</span> measure capacity on your data by correlation with random labels, and control the gap with norms and data.</p>
+  <ul>
+    <li><strong>Rademacher</strong> $\hat{\mathcal R}_S=\mathbb E_\sigma[\sup_h\tfrac1n\sum\sigma_i h(x_i)]$ — 1 for "fit anything," small for constrained classes.</li>
+    <li><strong>Bound:</strong> $L\le\hat L+2\hat{\mathcal R}_S+O(\sqrt{1/n})$ — data-dependent, tighter than VC, still $1/\sqrt n$.</li>
+    <li><strong>Margin/norm bounds</strong> $\le BR/\sqrt n$ are <em>dimension-free</em> — the reason SVMs and large-margin nets generalize.</li>
+    <li><strong>Random-label puzzle:</strong> nets that fit noise have $\hat{\mathcal R}\approx1$, so generalization is about <em>data + implicit bias</em>, not capacity alone.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> ask "how much of pure noise could this class fit?" — that number, not the parameter count, is the capacity that matters. Shrink it with more data or smaller norms/bigger margins, and the train–test gap comes with it.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Pillar complete →</span>
+  <h3>Pillar V · Information Theory &amp; Divergences</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">We've measured capacity; next we measure <em>information</em> and <em>distance between distributions</em>: mutual information, f-divergences, and optimal transport / the Wasserstein distance behind modern generative models. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

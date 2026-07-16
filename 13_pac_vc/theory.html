@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Bias–Variance, PAC & VC Dimension · Math for ML · Advanced</title>
+<meta name="description" content="What 'learnable' means: the bias–variance decomposition, PAC learning, and VC dimension — how model capacity controls the gap between training and test error.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Bias–Variance, PAC & VC Dimension · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="13_pac_vc">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Bias–variance</a>
+  <a href="#s2">2 · The complexity dial</a>
+  <a href="#s3">3 · PAC learning</a>
+  <a href="#s4">4 · VC dimension</a>
+  <a href="#s5">5 · Generalization bound</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Learning Theory · 13</div>
+    <h1>Bias–Variance, PAC &amp; VC Dimension</h1>
+    <p class="lede">We can optimize and infer — but <em>when does a model generalize?</em> Learning theory answers with three tools: the bias–variance decomposition, the PAC framework for "probably approximately correct," and VC dimension, which turns "model capacity" into a number.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy/SciPy-verified</span><span class="dot"></span><span>Prereq: probability, MLE (Session 10)</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">A model that fits the training data perfectly can still be useless — it may have memorized noise. <strong>Learning theory</strong> is the study of the gap between training performance and true performance, and what controls it. This session builds the three pillars: the <strong>bias–variance decomposition</strong> (why error is U-shaped in complexity), <strong>PAC learning</strong> (a formal definition of "learnable" with a sample-complexity price tag), and <strong>VC dimension</strong> (a single number for a model class's capacity). Together they explain why more flexible isn't always better.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Decompose expected error into <strong>bias² + variance + irreducible noise</strong> and read the U-shaped curve.</li>
+    <li>Explain underfitting vs overfitting as the bias–variance trade-off.</li>
+    <li>State the PAC criterion $(\varepsilon,\delta)$ and the finite-class sample-complexity bound.</li>
+    <li>Define <strong>shattering</strong> and <strong>VC dimension</strong>, and compute it for simple classifiers.</li>
+    <li>Read a generalization bound: test error $\le$ train error $+\ O\!\big(\sqrt{\text{VC}/n}\big)$.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Shalev-Shwartz &amp; Ben-David, <em>Understanding Machine Learning</em> <span class="secs">Ch 2–6 (PAC, VC)</span>; Mohri et al., <em>Foundations of ML</em> <span class="secs">Ch 2–3</span>; Hastie et al., <em>ESL</em> <span class="secs">§7 (bias–variance)</span>.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">The bias–variance decomposition</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">The complexity dial</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">PAC learning</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">VC dimension &amp; shattering</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">The generalization bound</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$\hat f$</span><span class="def">The learned model (depends on the random training set).</span>
+    <span class="sym">bias</span><span class="def">$\mathbb E[\hat f]-f$ — systematic error of the average model.</span>
+    <span class="sym">variance</span><span class="def">$\operatorname{Var}[\hat f]$ — how much $\hat f$ wobbles across training sets.</span>
+    <span class="sym">$(\varepsilon,\delta)$</span><span class="def">PAC: error $\le\varepsilon$ with probability $\ge1-\delta$.</span>
+    <span class="sym">VC$(\mathcal H)$</span><span class="def">VC dimension — size of the largest set $\mathcal H$ can shatter.</span>
+    <span class="sym">$\mathcal H$</span><span class="def">Hypothesis class (the set of models considered).</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>The bias–variance decomposition</h2>
+<p>Suppose data is $y=f(x)+\epsilon$ with noise variance $\sigma^2$. For a model $\hat f$ trained on a random dataset, the expected squared error at a point decomposes <em>exactly</em> into three terms:</p>
+<div class="mathband">$$ \mathbb E\big[(y-\hat f(x))^2\big] = \underbrace{\big(\mathbb E[\hat f(x)]-f(x)\big)^2}_{\text{bias}^2} + \underbrace{\operatorname{Var}[\hat f(x)]}_{\text{variance}} + \underbrace{\sigma^2}_{\text{irreducible}}. $$</div>
+<ul>
+  <li><strong>Bias²</strong> — error from the model being too simple to represent $f$ (systematic; doesn't vanish with more data).</li>
+  <li><strong>Variance</strong> — sensitivity to the particular training sample (the model wobbles run to run).</li>
+  <li><strong>Irreducible noise $\sigma^2$</strong> — the floor; no model can beat it.</li>
+</ul>
+<p>You cannot drive both bias and variance to zero at once with finite data — pushing one down usually pushes the other up. That tension <em>is</em> the trade-off.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Fitting polynomials to noisy $\sin(2\pi x)$ (n=25) over 400 datasets: degree 1 → bias² $0.154$, var $0.024$ (underfit, bias dominates); degree 3 → $0.003 / 0.018$ (sweet spot, total $0.021$); degree 9 → bias² $0.19$ but variance $\mathbf{192}$; degree 12 → variance in the millions (E1). Bias falls, variance explodes — the classic picture.</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="bvplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">fit polynomials of degree</span></div>
+    <div class="slider-row"><span>degree</span><input type="range" id="sDeg" min="1" max="9" step="1" value="3"></div>
+    <div class="readout">
+      <span><span class="k">bias²</span> = <span class="va" id="rBias">…</span></span>
+      <span><span class="k">variance</span> = <span class="vb" id="rVar">…</span></span>
+      <span><span class="k">verdict</span> = <span class="vd" id="rVerd">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Seeing bias and variance.</strong> The teal curve is the truth $f(x)=\sin(2\pi x)$; each faint indigo curve is a polynomial fit from a <em>different</em> random sample. Low degree → all fits are similar but miss the shape (<strong>high bias, low variance</strong>). High degree → fits chase the noise and scatter wildly (<strong>low bias, high variance</strong>). The spread of the curves <em>is</em> the variance; their average distance from the teal curve is the bias.</figcaption>
+</figure>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>The complexity dial — underfit ↔ overfit</h2>
+<p>Model complexity is a dial, and total error is <strong>U-shaped</strong> along it:</p>
+<ul>
+  <li><strong>Too simple (left):</strong> high bias, low variance — <em>underfitting</em>. Train and test error both high.</li>
+  <li><strong>Too complex (right):</strong> low bias, high variance — <em>overfitting</em>. Train error near zero, test error large.</li>
+  <li><strong>The sweet spot (bottom):</strong> balanced, minimizing test error.</li>
+</ul>
+<p>Regularization (ridge/lasso, dropout, early stopping) is precisely a tool for moving <em>along</em> this dial without changing the architecture — trading a little bias for a lot less variance.</p>
+<div class="callout c-warn"><span class="tag">Modern footnote: double descent</span>
+Classical theory says error rises past the interpolation point. In very over-parameterized models (deep nets), pushing complexity <em>further</em> can make test error fall <em>again</em> — "double descent." The classical U still governs the under-parameterized regime; the second descent is an active research story, not a contradiction of the decomposition.</div>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>PAC learning — what "learnable" means</h2>
+<p><strong>PAC</strong> (Probably Approximately Correct) makes "the model works" precise. A class is PAC-learnable if, given enough samples, an algorithm returns a hypothesis that is <em>approximately</em> correct (error $\le\varepsilon$) with high <em>probability</em> ($\ge1-\delta$):</p>
+<div class="mathband">$$ \Pr\big[\text{error}(\hat h)\le\varepsilon\big]\ \ge\ 1-\delta. $$</div>
+<p>Two knobs: $\varepsilon$ (how approximate) and $\delta$ (how probably). The key quantity is <strong>sample complexity</strong> — how many examples $n$ you need. For a <em>finite</em> hypothesis class $\mathcal H$:</p>
+<div class="mathband">$$ n \ \ge\ \frac{1}{\varepsilon}\Big(\ln|\mathcal H| + \ln\tfrac{1}{\delta}\Big). $$</div>
+<p>Read it: samples needed grow with the log of the class size (capacity) and shrink as you tolerate more error. Richer models need more data to pin down.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+$|\mathcal H|=1000,\ \varepsilon=0.1,\ \delta=0.05\Rightarrow n\ge100$; $|\mathcal H|=10^6,\ \varepsilon=0.05,\ \delta=0.01\Rightarrow n\ge369$ (E3). Note the $\ln$: a thousand-fold bigger class needs only a few times more data.</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>VC dimension — capacity as a number</h2>
+<p>Most useful hypothesis classes are <em>infinite</em> (all linear classifiers), so $|\mathcal H|$ is useless. <strong>VC dimension</strong> measures capacity for infinite classes via <strong>shattering</strong>: a set of points is shattered by $\mathcal H$ if, for <em>every</em> possible labeling of those points, some hypothesis in $\mathcal H$ realizes it.</p>
+<div class="mathband">$$ \text{VC}(\mathcal H) = \text{size of the largest set that } \mathcal H \text{ can shatter}. $$</div>
+<p>Some classic values:</p>
+<table class="sum">
+  <thead><tr><th>Hypothesis class</th><th>VC dimension</th></tr></thead>
+  <tbody>
+  <tr><td>Thresholds on $\mathbb R$ ($x>t$)</td><td>1</td></tr>
+  <tr><td>Intervals on $\mathbb R$</td><td>2</td></tr>
+  <tr><td>Linear classifiers in $\mathbb R^d$</td><td>$d+1$</td></tr>
+  <tr><td>1-nearest-neighbour</td><td>$\infty$ (can shatter anything)</td></tr>
+  </tbody>
+</table>
+<div class="callout c-good"><span class="tag">Verified</span>
+Linear classifiers in 2D: three non-collinear points are shattered — all $2^3=8$ labelings are linearly separable ($8/8$). Four points cannot be — the two XOR labelings are not separable ($14/16$), so VC $=3=d+1$ (E2). This is the geometric fact behind "a line can't solve XOR."</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>The generalization bound — capacity controls the gap</h2>
+<p>VC dimension turns into a guarantee. With probability $\ge1-\delta$, for all $h\in\mathcal H$:</p>
+<div class="mathband">$$ \underbrace{\text{error}_{\text{test}}(h)}_{\text{true risk}} \ \le\ \underbrace{\text{error}_{\text{train}}(h)}_{\text{empirical risk}} + O\!\left(\sqrt{\frac{\text{VC}(\mathcal H)\,\ln n + \ln\tfrac1\delta}{n}}\right). $$</div>
+<p>The gap between test and train error is bounded by (roughly) $\sqrt{\text{VC}/n}$. Two levers: <strong>less capacity</strong> (smaller VC) or <strong>more data</strong> (larger $n$) both shrink the gap. This is the theoretical backbone of everything you already do:</p>
+<ul>
+  <li><strong>Occam's razor:</strong> prefer the simplest model that fits — lower VC, tighter bound.</li>
+  <li><strong>Structural risk minimization:</strong> explicitly trade empirical error against a capacity penalty (regularization is SRM in practice).</li>
+  <li><strong>"Get more data":</strong> the $\sqrt{1/n}$ decay is why data volume beats cleverness so often.</li>
+</ul>
+<div class="callout c-anchor"><span class="tag">The one-sentence theory of generalization</span>
+A model generalizes when its capacity is small relative to the amount of data — <em>fit the data with the least flexibility that suffices</em>, and the train/test gap stays controlled.</div>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+rng = np.random.default_rng(<span class="n">0</span>)
+f = <span class="k">lambda</span> x: np.sin(<span class="n">2</span>*np.pi*x)
+xt = np.linspace(<span class="n">0.05</span>, <span class="n">0.95</span>, <span class="n">50</span>); ft = f(xt)
+
+<span class="k">def</span> <span class="f">bias_var</span>(deg, n=<span class="n">25</span>, sigma=<span class="n">0.3</span>, trials=<span class="n">400</span>):
+    preds = np.zeros((trials, len(xt)))
+    <span class="k">for</span> t <span class="k">in</span> <span class="f">range</span>(trials):
+        x = rng.uniform(<span class="n">0</span>,<span class="n">1</span>,n); y = f(x) + rng.normal(<span class="n">0</span>,sigma,n)
+        preds[t] = np.polyval(np.polyfit(x,y,deg), xt)
+    bias2 = np.mean((preds.mean(<span class="n">0</span>) - ft)**<span class="n">2</span>)
+    var   = np.mean(preds.var(<span class="n">0</span>))
+    <span class="k">return</span> bias2, var
+
+<span class="k">for</span> d <span class="k">in</span> (<span class="n">1</span>,<span class="n">3</span>,<span class="n">9</span>):
+    <span class="f">print</span>(d, np.round(bias_var(d), <span class="n">4</span>))   <span class="c"># 1:[.154 .024]  3:[.003 .018]  9:[.19 192.]</span>
+
+<span class="c"># PAC sample complexity for a finite hypothesis class</span>
+H, eps, delta = <span class="n">1000</span>, <span class="n">0.1</span>, <span class="n">0.05</span>
+<span class="f">print</span>(np.ceil((np.log(H)+np.log(<span class="n">1</span>/delta))/eps))   <span class="c"># 100</span></pre>
+<div class="out">1 [0.154  0.0244]
+3 [0.0031 0.0177]
+9 [0.1915 192.25 ]
+100.0</div>
+
+<div class="callout c-good"><span class="tag">The practical read</span>
+Watch the <strong>train–test gap</strong>. Small gap + high error = underfit (raise capacity). Large gap = overfit (lower capacity or add data). That gap is the generalization bound, made concrete.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">A model with near-zero training error but high test error has…</div>
+  <button class="opt">high bias.</button>
+  <button class="opt">high variance (it's overfitting).</button>
+  <button class="opt">high irreducible noise.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">The VC dimension of linear classifiers in $\mathbb R^d$ is…</div>
+  <button class="opt">$d$.</button>
+  <button class="opt">$d+1$.</button>
+  <button class="opt">$2^d$.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Bias–variance is exact for squared loss;</strong> for other losses (0–1, cross-entropy) the clean three-term split doesn't hold, though the intuition carries.</li>
+  <li><strong>Shattering needs "for every labeling":</strong> finding <em>one</em> labeling a class can realize proves nothing; VC requires <em>all</em> $2^k$ labelings of some $k$-set.</li>
+  <li><strong>VC bounds are loose:</strong> they're worst-case and often pessimistic; real models generalize better than VC predicts (hence margin/Rademacher bounds — Session 14).</li>
+  <li><strong>High VC ≠ doomed:</strong> huge-capacity nets generalize well with enough data and implicit regularization (double descent).</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Judging a model by training error</span>Zero training error can mean perfect learning <em>or</em> pure memorization. Only the held-out/test error (the gap) reveals which.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · "More parameters = more capacity = worse"</span>Not necessarily — capacity depends on the class geometry (VC/margins), not raw parameter count. Over-parameterized + regularized can generalize beautifully.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Confusing shatterable-somewhere with shatters-all</span>VC is the largest set that <em>can</em> be shattered; you need only one such set, but that set's <em>every</em> labeling must be realizable.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>Error $=$ <strong>bias² + variance + irreducible noise</strong>; you can't zero the first two together.</li>
+  <li>Test error is <strong>U-shaped</strong> in complexity: simple → high bias, complex → high variance.</li>
+  <li><strong>PAC:</strong> error $\le\varepsilon$ w.p. $\ge1-\delta$; finite-class $n\ge\tfrac1\varepsilon(\ln|\mathcal H|+\ln\tfrac1\delta)$.</li>
+  <li><strong>VC dimension</strong> = largest shatterable set; linear in $\mathbb R^d$ is $d+1$.</li>
+  <li>Generalization gap $\lesssim\sqrt{\text{VC}/n}$ — shrink it with <strong>less capacity or more data</strong>.</li>
+  <li>Regularization = moving down the complexity dial; watch the <strong>train–test gap</strong>.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Measure the trade-off yourself.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-m">medium</span><p>Empirically compute bias² and variance for polynomial degrees 1, 3, 9 fitting $\sin(2\pi x)$, and identify the sweet spot.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Using the <code>bias_var</code> function: deg 1 → $[0.154, 0.024]$ (bias-limited), deg 3 → $[0.003, 0.018]$ (lowest total ≈ 0.021), deg 9 → $[0.19, 192]$ (variance-limited). Degree 3 is the sweet spot for this noise/size.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-h">hard</span><p>Show a linear classifier shatters 3 non-collinear points in 2D but not 4, using a linear-separability test.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">from</span> scipy.optimize <span class="k">import</span> linprog
+<span class="k">from</span> itertools <span class="k">import</span> product
+<span class="k">def</span> <span class="f">separable</span>(X,y):
+    ys=np.where(np.array(y)==<span class="n">1</span>,<span class="n">1</span>,-<span class="n">1</span>); n=len(X)
+    A=-(ys[:,<span class="k">None</span>]*np.hstack([X,np.ones((n,<span class="n">1</span>))])); b=-np.ones(n)
+    <span class="k">return</span> linprog(np.zeros(<span class="n">3</span>), A_ub=A, b_ub=b, bounds=[(-<span class="n">100</span>,<span class="n">100</span>)]*<span class="n">3</span>).success
+tri=np.array([[<span class="n">0</span>,<span class="n">0</span>],[<span class="n">1</span>,<span class="n">0</span>],[<span class="n">0.4</span>,<span class="n">1</span>]])
+<span class="f">sum</span>(separable(tri,l) <span class="k">for</span> l <span class="k">in</span> product([<span class="n">0</span>,<span class="n">1</span>],repeat=<span class="n">3</span>))   <span class="c"># 8/8 -> shatters</span></pre>
+    <p>3 points: 8/8 labelings separable ⇒ shattered ⇒ VC ≥ 3. The square's XOR labelings fail (14/16) ⇒ can't shatter 4 ⇒ VC $= 3 = d+1$.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-e">easy</span><p>Use the PAC bound to find $n$ for $|\mathcal H|=10^6$, $\varepsilon=0.05$, $\delta=0.01$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">np.ceil((np.log(<span class="n">1e6</span>)+np.log(<span class="n">1</span>/<span class="n">0.01</span>))/<span class="n">0.05</span>)   <span class="c"># 369</span></pre>
+    <p>$n\ge\tfrac{1}{0.05}(\ln10^6+\ln100)=\tfrac{1}{0.05}(13.8+4.6)\approx369$. The $\ln$ keeps it modest even for a million hypotheses.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Explain why 1-nearest-neighbour has infinite VC dimension and what that implies about its training error.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>1-NN can realize <em>any</em> labeling of <em>any</em> finite point set (each point is its own nearest neighbour), so it shatters sets of every size ⇒ VC $=\infty$. Consequence: its <strong>training error is always 0</strong> (each point predicts its own label), which tells you nothing — its generalization comes entirely from data density and the distance metric, not a small hypothesis class.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-m">medium</span><p>You observe train error 2%, test error 30%. Diagnose and prescribe using bias–variance.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Large train–test gap (28 points) with low train error ⇒ <strong>high variance / overfitting</strong>. Prescriptions: reduce capacity (smaller/regularized model, fewer features), add regularization (L2, dropout, early stopping), or get more data ($\sqrt{1/n}$ shrinks the gap). If instead both errors were ~30%, that'd be high bias (underfit) — raise capacity.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Model selection:</strong> cross-validation is the empirical search for the bottom of the U.</li>
+  <li><strong>Regularization:</strong> ridge/lasso/dropout/early-stopping all move down the complexity dial (structural risk minimization).</li>
+  <li><strong>Diagnosing training:</strong> the train–test gap tells you bias vs variance and what to fix.</li>
+  <li><strong>Data strategy:</strong> the $\sqrt{1/n}$ law quantifies how much more data buys.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · State the bias–variance decomposition.</div><div class="a">$\mathbb E[(y-\hat f)^2]=\text{bias}^2+\text{variance}+\sigma^2$. Bias = systematic error of the average model; variance = sensitivity to the training sample; $\sigma^2$ = irreducible noise.</div></div>
+<div class="qa"><div class="q">Q2 · Overfitting in bias–variance terms?</div><div class="a">Low bias, high variance: the model fits training noise, so training error is low but test error high (large gap).</div></div>
+<div class="qa"><div class="q">Q3 · What does PAC-learnable mean?</div><div class="a">With enough samples, an algorithm returns a hypothesis with error $\le\varepsilon$ with probability $\ge1-\delta$ — "probably approximately correct," with a sample-complexity guarantee.</div></div>
+<div class="qa"><div class="q">Q4 · Define VC dimension and give one value.</div><div class="a">The size of the largest point set the class can shatter (realize all labelings of). Linear classifiers in $\mathbb R^d$ have VC $=d+1$; in 2D that's 3 (a line can't do XOR).</div></div>
+<div class="qa"><div class="q">Q5 · How does capacity relate to generalization?</div><div class="a">Test error $\le$ train error $+O(\sqrt{\text{VC}/n})$: the gap grows with capacity and shrinks with data. Less capacity or more data ⇒ better generalization.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Bias–variance decomposition</td><td>Explains under/overfitting</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>U-shaped error vs complexity</td><td>Model selection &amp; regularization</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>PAC $(\varepsilon,\delta)$ &amp; sample complexity</td><td>Formal "learnable"; data needs</td><td class="freq f-h">High</td></tr>
+  <tr><td>VC dimension / shattering</td><td>Capacity as a number</td><td class="freq f-h">High</td></tr>
+  <tr><td>Generalization bound $\sqrt{\text{VC}/n}$</td><td>Why capacity &amp; data control the gap</td><td class="freq f-h">High</td></tr>
+  <tr><td>SRM / Occam</td><td>The principle behind regularization</td><td class="freq f-m">Medium</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Generalization = fit the data with the least flexibility that suffices.</div>
+  <p><span class="cc-sub">Reusable idea:</span> the gap between training and true error is governed by capacity vs data.</p>
+  <ul>
+    <li><strong>Error = bias² + variance + noise;</strong> complexity trades bias for variance, so test error is U-shaped.</li>
+    <li><strong>PAC</strong> makes "learnable" precise: error $\le\varepsilon$ w.p. $\ge1-\delta$, needing $n\gtrsim\tfrac1\varepsilon\ln|\mathcal H|$ samples.</li>
+    <li><strong>VC dimension</strong> = largest shatterable set (linear in $\mathbb R^d$: $d+1$) — capacity for infinite classes.</li>
+    <li><strong>Gap $\lesssim\sqrt{\text{VC}/n}$:</strong> shrink it with less capacity or more data — that's what regularization and "get more data" do.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> a perfect training fit means nothing on its own — what matters is capacity relative to data. Every regularizer, every cross-validation split, every "we need more data" is a move in the bias–variance / capacity game this session formalizes.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>14 · Generalization Bounds &amp; Rademacher Complexity →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">VC bounds are worst-case and loose. Rademacher complexity gives data-dependent, often much tighter guarantees — measuring how well a model class can fit pure noise, and why margins explain deep nets' generalization. <em>(Completes Pillar IV.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>
