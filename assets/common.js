@@ -70,10 +70,13 @@
       #mfml-cmdk .cmit.soon{opacity:.5;}
       #mfml-cmdk .empty{padding:22px; text-align:center; color:var(--faint); font-size:.92rem;}
       #mfml-cmdk mark{background:color-mix(in srgb,var(--accent) 30%,transparent); color:inherit; border-radius:3px; padding:0 1px;}
+      #mfml-cmdk .foot{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 16px; border-top:1px solid var(--rule); font-size:.8rem; color:var(--muted);}
+      #mfml-cmdk .tgl{font-family:'JetBrains Mono',monospace; font-size:.68rem; border:1px solid var(--rule-strong); background:var(--card); color:var(--ink); border-radius:20px; padding:5px 13px; cursor:pointer;}
+      #mfml-cmdk .tgl.on{background:var(--accent-soft); color:var(--accent); border-color:transparent;}
     `;
     document.head.appendChild(st);
     const overlay = document.createElement("div"); overlay.id = "mfml-cmdk";
-    overlay.innerHTML = '<div class="box"><input type="text" placeholder="Search lessons…" aria-label="Search lessons" autocomplete="off" spellcheck="false"><div class="res"></div></div>';
+    overlay.innerHTML = '<div class="box"><input type="text" placeholder="Search lessons…" aria-label="Search lessons" autocomplete="off" spellcheck="false"><div class="res"></div><div class="foot"><span>◄ / ► arrow-key lesson navigation</span><button class="tgl" id="mfmlArrowTgl" type="button"></button></div></div>';
     document.body.appendChild(overlay);
     const input = overlay.querySelector("input"), res = overlay.querySelector(".res");
     let filtered = [], sel = 0;
@@ -100,10 +103,15 @@
     input.addEventListener("keydown", e => {
       if(e.key==="ArrowDown"){ e.preventDefault(); sel=Math.min(sel+1,filtered.length-1); updSel(); }
       else if(e.key==="ArrowUp"){ e.preventDefault(); sel=Math.max(sel-1,0); updSel(); }
-      else if(e.key==="Enter"){ e.preventDefault(); const s=filtered[sel]; if(s&&s.ready) location.href=BASE+s.slug+"/theory.html"; }
+      else if(e.key==="Enter"){ e.preventDefault(); const s=filtered[sel]; if(s&&s.ready) goSession(BASE+s.slug+"/theory.html"); }
       else if(e.key==="Escape"){ e.preventDefault(); closeP(); }
     });
     overlay.addEventListener("click", e => { if(e.target===overlay) closeP(); });
+    // arrow-nav on/off toggle (persisted, shared with the keyboard handler)
+    const tgl = overlay.querySelector("#mfmlArrowTgl");
+    function syncTgl(){ const on = arrowNavOn(); tgl.textContent = on ? "On" : "Off"; tgl.classList.toggle("on", on); }
+    syncTgl();
+    tgl.addEventListener("click", () => { try{ localStorage.setItem("mfml-arrownav", arrowNavOn() ? "off" : "on"); }catch(e){} syncTgl(); });
     window.MFML_openSearch = openP;
     document.addEventListener("keydown", e => {
       if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==="k"){ e.preventDefault(); openP(); }
@@ -215,14 +223,18 @@
     }));
   });
 
+  // arrow-key lesson nav: on/off (persisted) + bubble-aware navigation
+  function arrowNavOn(){ try{ return localStorage.getItem("mfml-arrownav") !== "off"; }catch(e){ return true; } }
+  function goSession(href){ if (window.MFML_navigate) window.MFML_navigate(href); else location.href = href; }
+
   // ── keyboard shortcuts ─────────────────────────────────────────────────────
   document.addEventListener("keydown", e => {
     if (e.target.matches("input,textarea,select") || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === "t"){ document.getElementById("themeToggle").click(); }
     else if (e.key === "?"){ alert("Shortcuts\n\n/ or ⌘K   search lessons\nt   toggle theme\nj / k   next / prev section\n← / →   prev / next session\ng / G   top / bottom"); }
-    else if (cur >= 0 && k === "arrowright" && SES[cur+1] && SES[cur+1].ready){ location.href = BASE+SES[cur+1].slug+"/theory.html"; }
-    else if (cur >= 0 && k === "arrowleft"  && SES[cur-1] && SES[cur-1].ready){ location.href = BASE+SES[cur-1].slug+"/theory.html"; }
+    else if (arrowNavOn() && cur >= 0 && k === "arrowright" && SES[cur+1] && SES[cur+1].ready){ goSession(BASE+SES[cur+1].slug+"/theory.html"); }
+    else if (arrowNavOn() && cur >= 0 && k === "arrowleft"  && SES[cur-1] && SES[cur-1].ready){ goSession(BASE+SES[cur-1].slug+"/theory.html"); }
     else if (e.key === "g"){ scrollTo({top:0, behavior:beh}); }
     else if (e.key === "G"){ scrollTo({top:document.documentElement.scrollHeight, behavior:beh}); }
     else if (k === "j" || k === "k"){ jumpSection(k === "j" ? 1 : -1); }
@@ -313,6 +325,17 @@
       b.style.width = b.style.height = (R*2)+"px"; b.style.left = (x-R)+"px"; b.style.top = (y-R)+"px";
       document.body.appendChild(b); return b;
     }
+    // programmatic navigation with the same bubble transition (arrow keys, palette Enter)
+    window.MFML_navigate = function(href){
+      let url; try{ url = new URL(href, location.href); } catch(_){ location.href = href; return; }
+      if (reduced){ location.href = url.href; return; }
+      const bx = innerWidth/2, by = innerHeight*0.5;
+      try{ sessionStorage.setItem("mfml-nav", JSON.stringify({x:bx, y:by, t: Date.now()})); }catch(e){}
+      const bb = makeBubble(bx,by);
+      let done = false; const go = () => { if (!done){ done = true; location.href = url.href; } };
+      bb.animate([{transform:"scale(0)"},{transform:"scale(1)"}], {duration:460, easing:"cubic-bezier(.4,0,.2,1)", fill:"forwards"}).onfinish = go;
+      setTimeout(go, 620);
+    };
     // reveal on arrival
     try{
       const navRaw = sessionStorage.getItem("mfml-nav");
