@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Bayesian Inference at Scale — MCMC · Math for ML · Advanced</title>
+<meta name="description" content="Posteriors you can't write down, sampled anyway: Metropolis–Hastings, detailed balance, burn-in and mixing, and why a guided random walk explores a distribution.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Bayesian Inference at Scale — MCMC · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="11_mcmc">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · The intractable posterior</a>
+  <a href="#s2">2 · The MCMC idea</a>
+  <a href="#s3">3 · Metropolis–Hastings</a>
+  <a href="#s4">4 · Detailed balance</a>
+  <a href="#s5">5 · Diagnostics & Gibbs</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Probabilistic Inference · 11</div>
+    <h1>Bayesian Inference at Scale — MCMC</h1>
+    <p class="lede">Maximum likelihood gives a point; Bayes gives a whole posterior — but that posterior almost never has a closed form. Markov Chain Monte Carlo samples from it anyway, using a guided random walk that provably settles onto the target distribution.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Sessions 09–10, Bayes basics</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Session 10 gave a single best parameter. Bayesian inference wants the full <strong>posterior</strong> $p(\theta\mid\text{data})$ — every plausible value with its probability. The trouble is the normalizing constant: $p(\theta\mid x)=\frac{p(x\mid\theta)p(\theta)}{p(x)}$, and the evidence $p(x)=\int p(x\mid\theta)p(\theta)\,d\theta$ is an integral you usually can't do. <strong>MCMC</strong> sidesteps it entirely: it draws samples from the posterior using <em>only the unnormalized</em> $p(x\mid\theta)p(\theta)$, by building a Markov chain whose long-run distribution <em>is</em> the posterior.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Explain why the posterior's normalizing constant makes exact Bayesian inference hard.</li>
+    <li>State the MCMC idea: a Markov chain whose stationary distribution is the target.</li>
+    <li>Run the <strong>Metropolis–Hastings</strong> algorithm and compute its acceptance ratio.</li>
+    <li>Explain <strong>detailed balance</strong> and why it guarantees the right stationary distribution.</li>
+    <li>Diagnose a chain: burn-in, mixing, acceptance rate, and autocorrelation.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Bishop, <em>PRML</em> <span class="secs">§11.2 (MCMC), §11.3 (Gibbs)</span>; Murphy, <em>Probabilistic ML: Advanced</em> <span class="secs">Ch 12</span>; Gelman et al., <em>Bayesian Data Analysis</em> <span class="secs">Ch 11</span>.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">The intractable posterior</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">The MCMC idea</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">Metropolis–Hastings</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Detailed balance</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Diagnostics &amp; Gibbs</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$p(\theta\mid x)$</span><span class="def">Posterior — target distribution to sample from.</span>
+    <span class="sym">$\tilde p(\theta)$</span><span class="def">Unnormalized posterior $=p(x\mid\theta)p(\theta)$ (no evidence needed).</span>
+    <span class="sym">$q(\theta'\mid\theta)$</span><span class="def">Proposal distribution — how we suggest the next state.</span>
+    <span class="sym">$\alpha$</span><span class="def">Acceptance probability of a proposed move.</span>
+    <span class="sym">detailed balance</span><span class="def">$\pi(x)P(x\to x')=\pi(x')P(x'\to x)$ — the condition making $\pi$ stationary.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>The posterior you can't normalize</h2>
+<p>Bayes' rule is easy to write:</p>
+<div class="mathband">$$ p(\theta\mid x) = \frac{p(x\mid\theta)\,p(\theta)}{p(x)}, \qquad p(x)=\int p(x\mid\theta)\,p(\theta)\,d\theta. $$</div>
+<p>The numerator — likelihood × prior — you can always evaluate. The denominator $p(x)$ is an integral over <em>all</em> parameter values; in more than a couple of dimensions, or without a conjugate prior (foundational Session 21), it has no closed form and is hopeless to compute directly. So we only ever know the posterior <strong>up to a constant</strong>: $p(\theta\mid x)\propto\tilde p(\theta)=p(x\mid\theta)p(\theta)$. The magic of MCMC is that this is <em>enough</em> — the unknown constant cancels.</p>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>The MCMC idea — walk until you match the target</h2>
+<p>Instead of computing the posterior, <strong>sample</strong> from it. MCMC constructs a <strong>Markov chain</strong> — a random walk where the next state depends only on the current one — engineered so that its long-run <strong>stationary distribution</strong> is exactly the target $\pi=p(\theta\mid x)$. Run the chain long enough and the states you visit are (correlated) samples from the posterior. Then any expectation is just an average:</p>
+<div class="mathband">$$ \mathbb E_{\pi}[f(\theta)] \approx \frac1N\sum_{k=1}^N f(\theta_k), \qquad \theta_k \text{ from the chain}. $$</div>
+<p>Posterior mean, credible intervals, predictive distributions — all become sample averages. The trick is designing a chain with the right stationary distribution using only $\tilde p$.</p>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>Metropolis–Hastings</h2>
+<p>The workhorse recipe. From the current state $\theta$: <strong>propose</strong> a move $\theta'\sim q(\theta'\mid\theta)$ (e.g. a Gaussian step), then <strong>accept</strong> it with probability</p>
+<div class="mathband">$$ \alpha = \min\!\left(1,\ \frac{\tilde p(\theta')\,q(\theta\mid\theta')}{\tilde p(\theta)\,q(\theta'\mid\theta)}\right). $$</div>
+<p>If accepted, move to $\theta'$; otherwise stay at $\theta$ (and record it again). For a <em>symmetric</em> proposal ($q(\theta'\mid\theta)=q(\theta\mid\theta')$, like a centered Gaussian) the $q$'s cancel and it's just the ratio of unnormalized densities:</p>
+<div class="mathband">$$ \alpha = \min\!\left(1,\ \frac{\tilde p(\theta')}{\tilde p(\theta)}\right). $$</div>
+<p>Read it plainly: <strong>always move to a more probable point; sometimes move to a less probable one</strong> (with probability equal to the density ratio). That occasional downhill step is what lets the chain explore the whole distribution instead of collapsing to the mode. Crucially, the ratio kills the normalizing constant — $\tilde p$ is all you need.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Metropolis sampling an unnormalized $\log\mathcal N(3,1.5^2)$ (60k samples) gives sample mean $3.005$ and std $1.487$ — matching the true $3.0$ and $1.5$ — at a $56\%$ acceptance rate (E1).</div>
+<div class="callout c-good"><span class="tag">Verified</span>
+Sampling a $\mathrm{Beta}(30,70)$ posterior known only as $p^{29}(1-p)^{69}$ recovers a posterior mean of $0.2999$, matching the exact $a/(a+b)=0.30$ (E2) — Bayesian inference with no closed-form evidence.</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="mcmcplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">target</span><span>bimodal: ½·N(−2, 0.7²) + ½·N(2, 0.7²)</span></div>
+    <div class="slider-row"><span>proposal σ</span><input type="range" id="sProp" min="0.1" max="6" step="0.1" value="2"><span>steps</span><input type="range" id="sSteps" min="200" max="30000" step="200" value="8000"></div>
+    <div class="readout">
+      <span><span class="k">acceptance rate</span> = <span class="va" id="rAcc">…</span></span>
+      <span><span class="k">mixing</span> = <span class="vd" id="rMix">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — A random walk that becomes the distribution.</strong> The teal curve is the (bimodal) target; the bars are the histogram of Metropolis samples. Grow <em>steps</em> and the histogram fills in to match the target — including <em>both</em> modes, which the chain crosses via its occasional downhill jumps. The proposal σ is the key dial: <strong>too small</strong> → almost every move accepted but tiny steps, so it mixes slowly and can get stuck in one mode; <strong>too large</strong> → most moves rejected, so it barely moves. The sweet spot (accept ≈ 25–50%) explores fastest.</figcaption>
+</figure>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Why it works: detailed balance</h2>
+<p>Why does this converge to $\pi$? Because Metropolis–Hastings is built to satisfy <strong>detailed balance</strong>:</p>
+<div class="mathband">$$ \pi(\theta)\,P(\theta\to\theta') = \pi(\theta')\,P(\theta'\to\theta). $$</div>
+<p>In words: at equilibrium, the probability flow from $\theta$ to $\theta'$ equals the flow back. A chain satisfying detailed balance has $\pi$ as a stationary distribution — once you're distributed as $\pi$, you stay distributed as $\pi$. The MH acceptance ratio is precisely the factor that <em>forces</em> this balance for the target $\pi\propto\tilde p$; the normalizer cancels in the balance equation just as it does in $\alpha$. Add <strong>ergodicity</strong> (the chain can eventually reach anywhere) and the chain is guaranteed to converge to $\pi$ from any start.</p>
+<aside class="side"><span class="lbl">The two ingredients</span><b>Detailed balance</b> ⇒ $\pi$ is stationary (you don't drift away from it). <b>Ergodicity</b> ⇒ you actually get there from any start and averages converge. Together: MCMC works.</aside>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Diagnostics, tuning &amp; Gibbs</h2>
+<p>Correctness is asymptotic; in practice you must check the chain:</p>
+<ul>
+  <li><strong>Burn-in:</strong> the chain starts wherever you put it; discard the first stretch before it reaches $\pi$.</li>
+  <li><strong>Acceptance rate:</strong> tune the proposal so it's roughly $0.2$–$0.5$ (the theoretical optimum for high-dim random-walk MH is $\approx0.234$). Too high = steps too timid; too low = too bold.</li>
+  <li><strong>Autocorrelation &amp; effective sample size:</strong> consecutive samples are correlated, so $N$ MCMC draws are worth fewer than $N$ independent ones. Thin or measure ESS.</li>
+  <li><strong>Multiple chains / R̂:</strong> run several from different starts; if they agree, you've likely converged.</li>
+</ul>
+<div class="callout c-good"><span class="tag">Verified</span>
+On a standard-normal target, acceptance drops as the proposal widens: σ=0.1 → 96%, σ=1 → 70%, σ=5 → 24%, σ=20 → 6% (E4) — yet all recover std ≈ 1.0. High acceptance isn't good if the steps are tiny; you want big <em>effective</em> moves, which is the mid-range.</div>
+<p><strong>Gibbs sampling</strong> is a special case: when you can sample each variable from its <em>full conditional</em> $p(\theta_i\mid\theta_{-i})$, do exactly that, one coordinate at a time. Every move is accepted ($\alpha=1$), and it's the engine behind classic Bayesian models (LDA, hierarchical models). Modern practice often uses <strong>Hamiltonian Monte Carlo / NUTS</strong> (Stan, PyMC), which uses gradients of $\log\tilde p$ to propose distant, high-acceptance moves — MCMC meets the gradients of Pillars I–II.</p>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+rng = np.random.default_rng(<span class="n">0</span>)
+
+<span class="k">def</span> <span class="f">metropolis</span>(logp, x0, prop_sd, n, burn=<span class="n">2000</span>):
+    x = x0; xs = []; acc = <span class="n">0</span>
+    <span class="k">for</span> i <span class="k">in</span> <span class="f">range</span>(n + burn):
+        xp = x + rng.normal(<span class="n">0</span>, prop_sd)          <span class="c"># symmetric proposal</span>
+        <span class="k">if</span> np.log(rng.uniform()) &lt; logp(xp) - logp(x):  <span class="c"># accept in log-space</span>
+            x = xp; acc += <span class="n">1</span>
+        <span class="k">if</span> i &gt;= burn: xs.append(x)
+    <span class="k">return</span> np.array(xs), acc/(n+burn)
+
+<span class="c"># target: Beta(30,70) posterior known only up to a constant</span>
+logpost = <span class="k">lambda</span> p: (<span class="n">29</span>)*np.log(p) + (<span class="n">69</span>)*np.log(<span class="n">1</span>-p) <span class="k">if</span> <span class="n">0</span>&lt;p&lt;<span class="n">1</span> <span class="k">else</span> -np.inf
+xs, ar = metropolis(logpost, <span class="n">0.5</span>, <span class="n">0.05</span>, <span class="n">60000</span>)
+<span class="f">print</span>(xs.mean(), ar)          <span class="c"># 0.2999   0.68   (true mean a/(a+b)=0.30)</span></pre>
+<div class="out">0.29993...  0.68</div>
+
+<div class="callout c-good"><span class="tag">The whole point in one line</span>
+You never computed the evidence $p(x)$ — the acceptance ratio $\tilde p(\theta')/\tilde p(\theta)$ made the normalizer cancel. That single cancellation is why Bayesian inference is possible for models with no closed form.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">MCMC lets us sample a posterior without computing…</div>
+  <button class="opt">the prior.</button>
+  <button class="opt">the normalizing constant (evidence) $p(x)$ — it cancels in the acceptance ratio.</button>
+  <button class="opt">the likelihood.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="2">
+  <div class="qz">If your Metropolis chain accepts 98% of proposals, you should probably…</div>
+  <button class="opt">celebrate — higher acceptance is always better.</button>
+  <button class="opt">increase the proposal width — the steps are too small and it mixes slowly.</button>
+  <button class="opt">decrease the number of samples.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Work in log-space:</strong> compute $\log\tilde p$ and accept if $\log u<\log\tilde p(\theta')-\log\tilde p(\theta)$ — densities underflow otherwise.</li>
+  <li><strong>Multimodal targets:</strong> random-walk MH can get trapped in one mode; use tempering, multiple chains, or HMC.</li>
+  <li><strong>Correlated samples:</strong> don't treat $N$ draws as $N$ independent points — report effective sample size.</li>
+  <li><strong>Asymmetric proposals</strong> need the full Hastings correction $q(\theta\mid\theta')/q(\theta'\mid\theta)$; symmetric ones don't.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Not discarding burn-in</span>Early samples reflect your arbitrary start, not the posterior. Throw them away (and check the trace plot).</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Chasing 100% acceptance</span>Near-total acceptance means microscopic steps — the chain crawls and effectively never explores. Aim for ~25–50%.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Trusting one short chain</span>A single unconverged chain can look fine while missing a whole mode. Run multiple chains and compare (R̂).</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>You only ever need the posterior <strong>up to a constant</strong>; the evidence cancels.</li>
+  <li><strong>MCMC</strong> = a Markov chain whose stationary distribution is the target; samples → expectations by averaging.</li>
+  <li><strong>Metropolis–Hastings:</strong> propose, accept with $\alpha=\min(1,\ \tilde p(\theta')/\tilde p(\theta))$ (symmetric case).</li>
+  <li><strong>Detailed balance</strong> ⇒ $\pi$ stationary; <strong>ergodicity</strong> ⇒ convergence from any start.</li>
+  <li>Tune the proposal for <strong>~25–50% acceptance</strong>; discard burn-in; watch autocorrelation.</li>
+  <li><strong>Gibbs</strong> (full conditionals, always accept) and <strong>HMC/NUTS</strong> (gradient-guided) are the practical variants.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Implement Metropolis and watch it recover known targets.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Use Metropolis to sample $\mathcal N(3,1.5^2)$ from its unnormalized log-density and check the sample mean/std.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">logp=<span class="k">lambda</span> x:-<span class="n">0.5</span>*((x-<span class="n">3</span>)/<span class="n">1.5</span>)**<span class="n">2</span>
+xs,ar=metropolis(logp,<span class="n">0.0</span>,<span class="n">2.5</span>,<span class="n">60000</span>)
+xs.mean(), xs.std(), ar     <span class="c"># ~3.0, ~1.5, ~0.56</span></pre>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-m">medium</span><p>Sample a $\mathrm{Beta}(30,70)$ posterior known only as $p^{29}(1-p)^{69}$ and compare the mean to $a/(a+b)$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">lp=<span class="k">lambda</span> p:(<span class="n">29</span>*np.log(p)+<span class="n">69</span>*np.log(<span class="n">1</span>-p)) <span class="k">if</span> <span class="n">0</span>&lt;p&lt;<span class="n">1</span> <span class="k">else</span> -np.inf
+xs,_=metropolis(lp,<span class="n">0.5</span>,<span class="n">0.05</span>,<span class="n">60000</span>); xs.mean()   <span class="c"># 0.2999 vs 0.30</span></pre>
+    <p>Never computed the Beta normalizing constant — it cancels in the ratio.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Sweep the proposal σ over $\{0.1,1,5,20\}$ on a standard normal and tabulate acceptance rate.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">for</span> ps <span class="k">in</span> (<span class="n">0.1</span>,<span class="n">1</span>,<span class="n">5</span>,<span class="n">20</span>):
+    xs,ar=metropolis(<span class="k">lambda</span> x:-<span class="n">0.5</span>*x*x,<span class="n">0.0</span>,ps,<span class="n">20000</span>); <span class="f">print</span>(ps,ar)
+<span class="c"># 0.96, 0.70, 0.24, 0.06 -> acceptance falls as steps grow</span></pre>
+    <p>High acceptance (tiny steps) and low acceptance (huge steps) both mix poorly; the middle explores best.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-h">hard</span><p>Sample a bimodal mixture $\tfrac12\mathcal N(-2,0.7^2)+\tfrac12\mathcal N(2,0.7^2)$ and check the chain visits both modes (~50/50).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">import</span> math
+lm=<span class="k">lambda</span> x: math.log(math.exp(-<span class="n">0.5</span>*((x+<span class="n">2</span>)/<span class="n">0.7</span>)**<span class="n">2</span>)+math.exp(-<span class="n">0.5</span>*((x-<span class="n">2</span>)/<span class="n">0.7</span>)**<span class="n">2</span>)+<span class="n">1e-300</span>)
+xs,_=metropolis(lm,<span class="n">0.0</span>,<span class="n">2.0</span>,<span class="n">80000</span>); np.mean(xs&lt;<span class="n">0</span>)   <span class="c"># ~0.49 (target 0.5)</span></pre>
+    <p>With a wide-enough proposal the chain jumps between modes; too small a σ and it would stick in one — the classic multimodal MCMC pitfall.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Explain, using detailed balance, why the Metropolis acceptance ratio makes $\pi\propto\tilde p$ stationary — and why the normalizer is irrelevant.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>For symmetric $q$, the transition kernel for $\theta\ne\theta'$ is $P(\theta\to\theta')=q(\theta'\mid\theta)\min(1,\tilde p(\theta')/\tilde p(\theta))$. Check detailed balance: $\pi(\theta)P(\theta\to\theta')=\tilde p(\theta)\,q\,\min(1,\tilde p(\theta')/\tilde p(\theta))=q\,\min(\tilde p(\theta),\tilde p(\theta'))$, which is symmetric in $\theta\leftrightarrow\theta'$. So $\pi(\theta)P(\theta\to\theta')=\pi(\theta')P(\theta'\to\theta)$ ⇒ $\pi\propto\tilde p$ is stationary. The overall constant multiplies both sides equally and cancels — which is why only $\tilde p$ is needed.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>Probabilistic programming:</strong> Stan, PyMC, NumPyro run HMC/NUTS — MCMC is their engine.</li>
+  <li><strong>Bayesian deep learning:</strong> posterior over weights for calibrated uncertainty.</li>
+  <li><strong>Classic models:</strong> Gibbs sampling powers LDA (topic models) and hierarchical Bayesian models.</li>
+  <li><strong>Anywhere the evidence is intractable:</strong> non-conjugate priors, latent-variable models, complex hierarchies.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · Why do we need MCMC for Bayesian inference?</div><div class="a">The posterior's normalizing constant (evidence) is an intractable integral. MCMC samples the posterior using only the unnormalized likelihood×prior, so it never needs that constant.</div></div>
+<div class="qa"><div class="q">Q2 · State the Metropolis acceptance rule.</div><div class="a">Propose $\theta'\sim q$; accept with $\alpha=\min(1,\ \tilde p(\theta')q(\theta\mid\theta')/[\tilde p(\theta)q(\theta'\mid\theta)])$. Symmetric $q$ ⇒ $\alpha=\min(1,\tilde p(\theta')/\tilde p(\theta))$.</div></div>
+<div class="qa"><div class="q">Q3 · What is detailed balance and why does it matter?</div><div class="a">$\pi(x)P(x\to x')=\pi(x')P(x'\to x)$. It guarantees $\pi$ is the chain's stationary distribution — the reason MH targets the right posterior.</div></div>
+<div class="qa"><div class="q">Q4 · How do you pick the proposal width?</div><div class="a">Tune for ~25–50% acceptance (≈0.234 optimal in high dimensions). Too narrow → slow mixing; too wide → most moves rejected.</div></div>
+<div class="qa"><div class="q">Q5 · Gibbs vs Metropolis vs HMC?</div><div class="a">Gibbs samples full conditionals (always accepts); Metropolis uses accept/reject on a proposal; HMC/NUTS uses gradients of $\log\tilde p$ for distant, high-acceptance moves — the modern default.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Intractable evidence</td><td>Why exact Bayes is hard</td><td class="freq f-h">High</td></tr>
+  <tr><td>MCMC = sample the target</td><td>Posterior expectations by averaging</td><td class="freq f-h">High</td></tr>
+  <tr><td>Metropolis–Hastings</td><td>The core sampling recipe</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Detailed balance</td><td>Why the chain targets $\pi$</td><td class="freq f-h">High</td></tr>
+  <tr><td>Acceptance / mixing / burn-in</td><td>Making chains actually work</td><td class="freq f-h">High</td></tr>
+  <tr><td>Gibbs &amp; HMC/NUTS</td><td>The tools you'll actually run (PyMC/Stan)</td><td class="freq f-m">Medium</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Can't integrate the posterior? Walk it instead.</div>
+  <p><span class="cc-sub">Reusable idea:</span> sampling replaces integration — and only needs the posterior up to a constant.</p>
+  <ul>
+    <li><strong>The problem:</strong> the evidence $p(x)=\int$ is intractable, so we know the posterior only as $\tilde p\propto$ likelihood×prior.</li>
+    <li><strong>Metropolis–Hastings:</strong> propose a move, accept with $\min(1,\tilde p(\theta')/\tilde p(\theta))$ — the constant cancels.</li>
+    <li><strong>Detailed balance</strong> makes the target stationary; <strong>ergodicity</strong> gets you there — then expectations are just sample averages.</li>
+    <li><strong>Tune for ~25–50% acceptance</strong>, discard burn-in, mind autocorrelation; Gibbs and HMC/NUTS are the practical engines.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> the acceptance ratio's cancellation of the normalizing constant is the whole trick — it turns "an impossible integral" into "a random walk that always moves uphill and sometimes down," and that walk <em>is</em> your posterior.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>12 · Variational Inference &amp; the ELBO →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">MCMC is exact but slow. Variational inference is the fast alternative: turn inference into <em>optimization</em> by fitting a simple distribution to the posterior — the ELBO, and the engine inside VAEs. <em>(Completes Pillar III.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>

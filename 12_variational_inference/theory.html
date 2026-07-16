@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Variational Inference & the ELBO · Math for ML · Advanced</title>
+<meta name="description" content="Turn inference into optimization: approximate an intractable posterior by maximizing the ELBO, the reparameterization trick, and the engine inside VAEs.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Variational Inference & the ELBO · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="12_variational_inference">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · Inference as optimization</a>
+  <a href="#s2">2 · The ELBO</a>
+  <a href="#s3">3 · Reconstruction − KL</a>
+  <a href="#s4">4 · Reparameterization</a>
+  <a href="#s5">5 · VI vs MCMC</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Probabilistic Inference · 12</div>
+    <h1>Variational Inference &amp; the ELBO</h1>
+    <p class="lede">MCMC is exact but slow. Variational inference is the fast alternative: give up on sampling the true posterior and instead <em>optimize</em> — fit a simple distribution to it by maximizing one quantity, the ELBO. It's the engine inside every VAE.</p>
+    <div class="meta"><span>~22 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Sessions 05, 09–11; info theory</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">Session 11 sampled the posterior with a random walk — exact in the limit, but potentially slow. <strong>Variational inference (VI)</strong> takes the other road: pick a tractable family of distributions $q$ (say, Gaussians), and find the member closest to the true posterior by <em>minimizing KL divergence</em>. Inference becomes optimization — which means gradients, GPUs, and mini-batches. The catch is that KL to the posterior still contains the intractable evidence, so we maximize a clever surrogate instead: the <strong>ELBO</strong>. That single objective is the whole of VI and the core of the VAE.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>Frame inference as minimizing $\mathrm{KL}(q\,\|\,p(\cdot\mid x))$ over a family $q$.</li>
+    <li>Derive the decomposition $\log p(x)=\text{ELBO}(q)+\mathrm{KL}(q\,\|\,\text{posterior})$ and why maximizing ELBO minimizes KL.</li>
+    <li>Read the ELBO as <strong>reconstruction − KL-to-prior</strong>.</li>
+    <li>Use the <strong>reparameterization trick</strong> to get low-variance gradients through sampling.</li>
+    <li>Contrast VI (fast, biased, mode-seeking) with MCMC (slow, asymptotically exact).</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Bishop, <em>PRML</em> <span class="secs">§10.1 (variational inference)</span>; Blei et al. 2017 (VI review); Kingma &amp; Welling 2014 (VAE / reparameterization); MML <span class="secs">§8.4</span>.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">Inference as optimization</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">The ELBO</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">Reconstruction − KL</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">The reparameterization trick</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">VI vs MCMC</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$q(z)$</span><span class="def">Variational approximation from a tractable family (e.g. Gaussian).</span>
+    <span class="sym">$p(z\mid x)$</span><span class="def">True (intractable) posterior — the target.</span>
+    <span class="sym">$\mathrm{KL}(q\|p)$</span><span class="def">Kullback–Leibler divergence; $\ge0$, zero iff $q=p$.</span>
+    <span class="sym">ELBO</span><span class="def">Evidence Lower BOund $=\mathbb E_q[\log p(x,z)]-\mathbb E_q[\log q(z)]$.</span>
+    <span class="sym">$z=\mu+\sigma\odot\epsilon$</span><span class="def">Reparameterization: move randomness to $\epsilon\sim\mathcal N(0,I)$.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>Inference as optimization</h2>
+<p>Pick a family $\mathcal Q$ of tractable distributions and find the one closest to the posterior:</p>
+<div class="mathband">$$ q^\star = \arg\min_{q\in\mathcal Q}\ \mathrm{KL}\big(q(z)\ \|\ p(z\mid x)\big). $$</div>
+<p>We use the KL in <em>this</em> order — $\mathrm{KL}(q\|p)$, the "reverse" KL — because it only needs expectations under $q$ (which we control) and never requires sampling the true posterior. But expanding it, $\mathrm{KL}(q\|p(\cdot\mid x))=\mathbb E_q[\log q]-\mathbb E_q[\log p(z\mid x)]$, still hides the intractable evidence inside $p(z\mid x)=p(x,z)/p(x)$. So we can't minimize it directly — enter the ELBO.</p>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>The ELBO — the surrogate we can actually optimize</h2>
+<p>Start from the log-evidence and insert $q$ (multiply and divide), then apply <strong>Jensen's inequality</strong> (Session 05) to pull the concave $\log$ inside the expectation:</p>
+<div class="mathband">$$ \log p(x) = \log\mathbb E_q\!\Big[\tfrac{p(x,z)}{q(z)}\Big] \ \ge\ \underbrace{\mathbb E_q\!\Big[\log\tfrac{p(x,z)}{q(z)}\Big]}_{\text{ELBO}(q)}. $$</div>
+<p>The gap in that inequality is exactly the KL we wanted to minimize — giving the central identity of VI:</p>
+<div class="mathband">$$ \log p(x) = \text{ELBO}(q) + \mathrm{KL}\big(q\ \|\ p(z\mid x)\big). $$</div>
+<p>Since $\log p(x)$ is a fixed constant (it doesn't depend on $q$) and $\mathrm{KL}\ge0$, two things follow: the ELBO is a <strong>lower bound</strong> on the evidence (hence the name), and <strong>maximizing the ELBO is identical to minimizing the KL</strong> to the posterior. We optimize a quantity built only from $p(x,z)$ and $q$ — both tractable — and get the posterior approximation for free.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+On a conjugate Gaussian model (prior $\mathcal N(0,1)$, likelihood $\mathcal N(z,1)$, observed $x{=}1$; posterior $\mathcal N(0.5,0.5)$), $\log p(x)=-1.5155$. The identity holds exactly: $q=$posterior → ELBO $-1.5155$, KL $0$; $q=$prior → ELBO $-1.9189$, KL $0.4034$; an arbitrary $q$ → ELBO $-1.6609$, KL $0.1454$. Every row sums to $-1.5155$ (E1).</div>
+<div class="callout c-good"><span class="tag">Verified</span>
+Maximizing the ELBO over the mean (with the right variance) lands at $\hat m=0.5$ — exactly the true posterior mean (E2). The bound is tight ($\text{ELBO}=\log p(x)$) precisely when $q$ equals the posterior.</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="viplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">fit q = N(m, s²) to the (skewed) posterior</span></div>
+    <div class="slider-row"><span>m</span><input type="range" id="sM" min="-3" max="3" step="0.05" value="0"><span>s</span><input type="range" id="sS" min="0.2" max="2.5" step="0.05" value="1"></div>
+    <div class="readout">
+      <span><span class="k">KL(q‖p)</span> = <span class="va" id="rKL">…</span></span>
+      <span><span class="k">ELBO = const − KL</span> <span class="vd" id="rElbo">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — VI fits a simple $q$ by minimizing KL(q‖p).</strong> The teal curve is a skewed/bimodal target posterior; the indigo curve is your Gaussian $q$. Slide $m,s$ to shrink $\mathrm{KL}(q\|p)$ (equivalently, raise the ELBO). Two lessons appear: the best Gaussian <em>can't</em> reach KL $=0$ against a non-Gaussian target — VI is <strong>approximate</strong> — and reverse-KL is <strong>mode-seeking</strong>: $q$ prefers to hug one mode tightly rather than straddle both, which is why VI tends to <em>underestimate</em> posterior variance.</figcaption>
+</figure>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>Reading the ELBO: reconstruction − KL</h2>
+<p>Rewrite the ELBO using $p(x,z)=p(x\mid z)\,p(z)$ and it splits into two interpretable pieces:</p>
+<div class="mathband">$$ \text{ELBO}(q) = \underbrace{\mathbb E_q[\log p(x\mid z)]}_{\text{reconstruction / fit}} \ -\ \underbrace{\mathrm{KL}\big(q(z)\ \|\ p(z)\big)}_{\text{stay near the prior}}. $$</div>
+<p>This is the objective a <strong>VAE</strong> maximizes, term for term. The first term rewards a $z$ that explains the data $x$ well (good reconstruction); the second penalizes $q$ for drifting from the prior $p(z)$ (a regularizer that keeps the latent space tidy). "Fit the data, but don't stray from the prior" — the same fit-vs-regularize tension as ridge regression, now over distributions.</p>
+<aside class="side"><span class="lbl">Mean-field VI</span>The classic recipe assumes $q$ factorizes, $q(z)=\prod_i q_i(z_i)$, and cyclically updates each factor to its optimal form (CAVI). Tractable, but the independence assumption is what makes VI underestimate correlations/variance.</aside>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>The reparameterization trick</h2>
+<p>To maximize the ELBO by gradient ascent we need $\nabla_\phi\,\mathbb E_{q_\phi}[f(z)]$ — a gradient <em>through a sampling step</em>, which is not obviously differentiable. The <strong>reparameterization trick</strong> moves the randomness out of the parameters: write a Gaussian sample as a deterministic function of noise,</p>
+<div class="mathband">$$ z = \mu_\phi + \sigma_\phi\odot\epsilon, \qquad \epsilon\sim\mathcal N(0,I), $$</div>
+<p>so $\nabla_\phi\,\mathbb E_\epsilon[f(\mu_\phi+\sigma_\phi\epsilon)] = \mathbb E_\epsilon[\nabla_\phi f(\cdots)]$ — the gradient passes straight through. This gives a <strong>low-variance</strong>, unbiased gradient estimator, far better than the generic score-function (REINFORCE) estimator, and it's what makes VAEs trainable end-to-end by backprop.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Estimating $\frac{d}{d\mu}\mathbb E_{z\sim\mathcal N(\mu,1)}[z^2]$ (true value $2\mu=3.0$): both estimators are unbiased ($2.999$ vs $2.996$), but the reparameterization gradient has variance $0.0019$ versus the score-function's $0.025$ — about <strong>13× lower</strong> (E4). Lower-variance gradients are why reparameterized VI trains stably.</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>VI vs MCMC — pick your trade</h2>
+<table class="sum">
+  <thead><tr><th></th><th>Variational inference</th><th>MCMC (Session 11)</th></tr></thead>
+  <tbody>
+  <tr><td>Approach</td><td>optimization (maximize ELBO)</td><td>sampling (run a chain)</td></tr>
+  <tr><td>Speed</td><td>fast, scales to big data / GPUs</td><td>slower, harder to scale</td></tr>
+  <tr><td>Accuracy</td><td>biased — limited by the family; underestimates variance</td><td>asymptotically exact</td></tr>
+  <tr><td>Failure mode</td><td>mode-seeking, over-confident</td><td>slow mixing, hard to diagnose</td></tr>
+  <tr><td>Use when</td><td>large models/data, need speed (VAEs, SVI)</td><td>need calibrated uncertainty, moderate size</td></tr>
+  </tbody>
+</table>
+<div class="callout c-anchor"><span class="tag">Why VI won deep generative modeling</span>
+Because it's just optimization, VI plugs into the whole deep-learning stack: encode $q_\phi(z\mid x)$ with a neural net, decode $p_\theta(x\mid z)$ with another, maximize the ELBO by backprop with the reparameterization trick — that's a <strong>VAE</strong> (Session 18). The intractable-inference problem became a training loop.</div>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np, math
+
+<span class="c"># conjugate model: prior N(0,1), lik N(z,1), x=1 -> posterior N(0.5, 0.5)</span>
+x, pm, ps2 = <span class="n">1.0</span>, <span class="n">0.5</span>, <span class="n">0.5</span>
+logpx = -<span class="n">0.5</span>*math.log(<span class="n">2</span>*math.pi*<span class="n">2</span>) - x**<span class="n">2</span>/(<span class="n">2</span>*<span class="n">2</span>)      <span class="c"># log N(x;0,2)</span>
+
+<span class="k">def</span> <span class="f">kl</span>(m,s2,mu,su2): <span class="k">return</span> <span class="n">0.5</span>*(math.log(su2/s2)+(s2+(m-mu)**<span class="n">2</span>)/su2-<span class="n">1</span>)
+<span class="k">def</span> <span class="f">elbo</span>(m,s2):
+    Elik  = -<span class="n">0.5</span>*math.log(<span class="n">2</span>*math.pi) - <span class="n">0.5</span>*((x-m)**<span class="n">2</span>+s2)
+    Eprior= -<span class="n">0.5</span>*math.log(<span class="n">2</span>*math.pi) - <span class="n">0.5</span>*(m**<span class="n">2</span>+s2)
+    Hq    =  <span class="n">0.5</span>*math.log(<span class="n">2</span>*math.pi*math.e*s2)
+    <span class="k">return</span> Elik + Eprior + Hq
+
+<span class="k">for</span> (m,s2) <span class="k">in</span> [(<span class="n">0.5</span>,<span class="n">0.5</span>),(<span class="n">0.0</span>,<span class="n">1.0</span>)]:
+    <span class="f">print</span>(elbo(m,s2), kl(m,s2,pm,ps2), elbo(m,s2)+kl(m,s2,pm,ps2))
+<span class="c"># -1.5155 0.0     -1.5155   (q = posterior: ELBO tight, KL=0)</span>
+<span class="c"># -1.9189 0.4034  -1.5155   (q = prior: gap = KL)  == log p(x)</span>
+
+<span class="c"># reparameterization gives a low-variance gradient of E[z^2] wrt mu</span>
+rng=np.random.default_rng(<span class="n">0</span>); mu=<span class="n">1.5</span>
+z = mu + rng.standard_normal(<span class="n">2000</span>)
+<span class="f">print</span>(np.mean(<span class="n">2</span>*z))                 <span class="c"># ~3.0 = 2*mu, variance ~13x lower than score-fn</span></pre>
+<div class="out">-1.5155 0.0 -1.5155
+-1.9189 0.4034 -1.5155
+2.999...</div>
+
+<div class="callout c-good"><span class="tag">The identity to remember</span>
+$\log p(x)=\text{ELBO}+\mathrm{KL}(q\,\|\,\text{posterior})$. Fixed evidence, non-negative gap — so pushing the ELBO up is pulling $q$ toward the posterior. That one line is variational inference.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="2">
+  <div class="qz">Maximizing the ELBO is equivalent to…</div>
+  <button class="opt">maximizing the KL between $q$ and the posterior.</button>
+  <button class="opt">minimizing $\mathrm{KL}(q\,\|\,p(z\mid x))$ — the bound gap.</button>
+  <button class="opt">computing the exact evidence $p(x)$.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="1">
+  <div class="qz">The reparameterization trick exists to…</div>
+  <button class="opt">get low-variance, backprop-able gradients through a sampling step.</button>
+  <button class="opt">make the posterior exactly Gaussian.</button>
+  <button class="opt">remove the prior from the ELBO.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Reverse KL is mode-seeking:</strong> $\mathrm{KL}(q\|p)$ makes $q$ cover one mode tightly (zero-forcing), <em>under</em>-estimating variance; forward KL $\mathrm{KL}(p\|q)$ would be mode-covering but needs samples from $p$.</li>
+  <li><strong>ELBO is a lower bound, not the evidence:</strong> a higher ELBO means a better fit, but its absolute value isn't $\log p(x)$ unless KL$=0$.</li>
+  <li><strong>Mean-field ignores correlations:</strong> factorized $q$ can't capture posterior dependence between latent dims.</li>
+  <li><strong>Reparameterization needs a differentiable sampler:</strong> works for Gaussian/continuous; discrete latents need Gumbel-softmax or score-function estimators.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Trusting VI's uncertainty</span>VI is typically <em>over-confident</em> (variance too small) because of reverse-KL mode-seeking. If calibrated uncertainty matters, prefer MCMC or correct for it.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Reading the ELBO as the evidence</span>ELBO $\le\log p(x)$; comparing ELBOs across models is only a rough proxy for model comparison.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · High-variance gradients without reparameterization</span>The score-function estimator is unbiased but noisy; without the reparameterization trick (or heavy variance reduction), ELBO optimization can be unstable.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>VI = <strong>inference as optimization</strong>: minimize $\mathrm{KL}(q\|p(\cdot\mid x))$ over a tractable family.</li>
+  <li>Core identity: <strong>$\log p(x)=\text{ELBO}(q)+\mathrm{KL}(q\|\text{posterior})$</strong>; maximize ELBO ⇔ minimize KL.</li>
+  <li>ELBO $=$ <strong>reconstruction $-$ KL-to-prior</strong> (the VAE objective).</li>
+  <li><strong>Reparameterize</strong> ($z=\mu+\sigma\epsilon$) for low-variance, backprop-able gradients.</li>
+  <li>Reverse KL is <strong>mode-seeking</strong> ⇒ VI tends to under-estimate posterior variance.</li>
+  <li>VI: fast &amp; biased; MCMC: slow &amp; asymptotically exact — choose per need.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Verify the ELBO identity and the gradient trick.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-m">medium</span><p>For the conjugate model (posterior $\mathcal N(0.5,0.5)$, $\log p(x){=}-1.5155$), verify $\text{ELBO}(q)+\mathrm{KL}(q\|\text{post})=\log p(x)$ for $q=$ prior and one arbitrary $q$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>Using the <code>elbo</code> and <code>kl</code> functions above: prior $q=\mathcal N(0,1)$ gives ELBO $-1.9189$, KL $0.4034$, sum $-1.5155$; $q=\mathcal N(0.8,0.3)$ gives ELBO $-1.6609$, KL $0.1454$, sum $-1.5155$. Both equal $\log p(x)$ — the gap is exactly the KL.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Maximize the ELBO over the mean $m$ (fix $s^2{=}0.5$) and confirm the optimum is the true posterior mean.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="f">max</span>((elbo(m,<span class="n">0.5</span>),m) <span class="k">for</span> m <span class="k">in</span> np.linspace(<span class="n">0</span>,<span class="n">1</span>,<span class="n">101</span>))[<span class="n">1</span>]   <span class="c"># 0.5 = posterior mean</span></pre>
+    <p>ELBO peaks where KL to the posterior is minimized — at $q=$ posterior, giving $m=0.5$.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Write the ELBO as reconstruction − KL-to-prior and identify each term with a VAE component.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$\text{ELBO}=\mathbb E_q[\log p(x\mid z)]-\mathrm{KL}(q(z)\|p(z))$. First term = <strong>decoder</strong> reconstruction likelihood (how well $z$ regenerates $x$); second term = <strong>encoder</strong> $q_\phi(z\mid x)$ kept near the prior $p(z)=\mathcal N(0,I)$. Maximizing it by backprop with reparameterized samples <em>is</em> training a VAE.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-h">hard</span><p>Compare the variance of the reparameterization vs score-function gradient estimator for $\frac{d}{d\mu}\mathbb E_{\mathcal N(\mu,1)}[z^2]$.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">rng=np.random.default_rng(<span class="n">0</span>); mu=<span class="n">1.5</span>
+z=mu+rng.standard_normal(<span class="n">2000</span>)
+np.mean(<span class="n">2</span>*z)              <span class="c"># reparam: ~3.0, var ~0.0019</span>
+np.mean(z*z*(z-mu))       <span class="c"># score-fn: ~3.0, var ~0.025 (~13x higher)</span></pre>
+    <p>Both estimate the true $2\mu=3$, but reparameterization threads the gradient through the deterministic map $z=\mu+\epsilon$, giving ~13× lower variance — the practical reason VAEs use it.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Explain why $\mathrm{KL}(q\|p)$ (reverse KL) is mode-seeking and what that does to VI's uncertainty estimates.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <p>$\mathrm{KL}(q\|p)=\mathbb E_q[\log q-\log p]$ is huge wherever $q>0$ but $p\approx0$ — so $q$ is punished for placing mass where the posterior has none. It therefore "zero-forces": it shrinks to sit inside a single high-probability region (one mode), ignoring others. The result is a $q$ that's too narrow — VI <strong>under-estimates variance and is over-confident</strong>. (Forward KL $\mathrm{KL}(p\|q)$ instead over-covers, but needs samples from $p$.)</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- PAYOFF + INTERVIEW -->
+<h2 id="ml"><span class="num">Payoff</span>Where this lives in real ML</h2>
+<ul>
+  <li><strong>VAEs (Session 18):</strong> the ELBO with reparameterization is the training objective, end to end.</li>
+  <li><strong>Bayesian deep learning:</strong> variational weight posteriors (Bayes-by-backprop) for uncertainty at scale.</li>
+  <li><strong>Topic models &amp; SVI:</strong> stochastic variational inference scales LDA and friends to millions of docs.</li>
+  <li><strong>Amortized inference:</strong> a network predicts $q_\phi(z\mid x)$ for any $x$ in one forward pass — the encoder.</li>
+</ul>
+
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What is variational inference?</div><div class="a">Approximate an intractable posterior by the closest member of a tractable family, found by minimizing $\mathrm{KL}(q\|p(\cdot\mid x))$ — i.e. inference recast as optimization.</div></div>
+<div class="qa"><div class="q">Q2 · What is the ELBO and why maximize it?</div><div class="a">$\text{ELBO}=\mathbb E_q[\log p(x,z)-\log q]$, a lower bound on $\log p(x)$. Since $\log p(x)=\text{ELBO}+\mathrm{KL}(q\|\text{post})$, maximizing the ELBO minimizes that KL — without needing the evidence.</div></div>
+<div class="qa"><div class="q">Q3 · How do you interpret the two ELBO terms?</div><div class="a">Reconstruction $\mathbb E_q[\log p(x\mid z)]$ (fit the data) minus $\mathrm{KL}(q(z)\|p(z))$ (stay near the prior) — the VAE objective.</div></div>
+<div class="qa"><div class="q">Q4 · What is the reparameterization trick and why?</div><div class="a">Write $z=\mu+\sigma\epsilon$ with $\epsilon\sim\mathcal N(0,I)$ so gradients pass through the sample; gives a low-variance, unbiased estimator (~13× less variance than score-function), enabling backprop-trained VAEs.</div></div>
+<div class="qa"><div class="q">Q5 · VI vs MCMC?</div><div class="a">VI is fast, scalable, but biased and typically over-confident (mode-seeking); MCMC is slower but asymptotically exact. Choose VI for scale, MCMC for calibrated uncertainty.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Inference as optimization</td><td>Fast, scalable Bayesian inference</td><td class="freq f-h">High</td></tr>
+  <tr><td>ELBO identity</td><td>The objective you actually maximize</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Reconstruction − KL</td><td>The VAE loss, explained</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Reparameterization trick</td><td>Low-variance gradients; trainable VAEs</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Reverse-KL mode-seeking</td><td>Why VI is over-confident</td><td class="freq f-h">High</td></tr>
+  <tr><td>VI vs MCMC</td><td>Speed vs exactness trade-off</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Turn inference into optimization: push up the ELBO.</div>
+  <p><span class="cc-sub">Reusable idea:</span> if you can't sample the posterior, fit a simple $q$ to it by maximizing a bound.</p>
+  <ul>
+    <li><strong>Identity:</strong> $\log p(x)=\text{ELBO}(q)+\mathrm{KL}(q\|\text{posterior})$ — evidence fixed, gap $\ge0$, so max ELBO ⇔ min KL.</li>
+    <li><strong>ELBO = reconstruction − KL-to-prior</strong> — the exact VAE objective (fit the data, stay near the prior).</li>
+    <li><strong>Reparameterize</strong> $z=\mu+\sigma\epsilon$ for low-variance, backprop-able gradients (~13× less variance than score-function).</li>
+    <li><strong>Reverse KL is mode-seeking</strong> ⇒ VI is fast but under-estimates variance; MCMC is the slower, exact alternative.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> Jensen's inequality converts an intractable log-integral into a bound you can climb with gradients. That one move — maximize the ELBO — is how modern ML does Bayesian inference at scale, and it's the beating heart of the VAE.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Pillar complete →</span>
+  <h3>Pillar IV · Learning Theory</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">We can optimize and infer; now — <em>when does a model generalize?</em> Bias–variance made rigorous, PAC learning, VC dimension, and the bounds that connect model capacity to the train/test gap. <em>(Coming next in the track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>
