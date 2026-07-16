@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>try{var _t=localStorage.getItem('mfml-theme')||'glass';if(_t!=='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<title>Normalizing Flows & Change of Variables · Math for ML · Advanced</title>
+<meta name="description" content="Exact likelihoods by tracking how densities warp: the change-of-variables formula, the log-determinant of the Jacobian, coupling layers (RealNVP), and sampling both directions.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Normalizing Flows & Change of Variables · Math for ML · Advanced">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235A4FCF'/%3E%3Cpath d='M8 20 Q16 6 24 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12.5' r='2.4' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/vendor/katex/katex.min.css">
+<script defer src="../assets/vendor/katex/katex.min.js"></script>
+<script defer src="../assets/vendor/katex/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="../assets/theory.css">
+</head>
+<body data-slug="20_normalizing_flows">
+<div id="progress"></div>
+
+<nav id="toc" aria-label="Table of contents">
+  <div class="cap">On this page</div>
+  <a href="#s1">1 · The exact-likelihood family</a>
+  <a href="#s2">2 · Change of variables</a>
+  <a href="#s3">3 · Composing invertible layers</a>
+  <a href="#s4">4 · Sampling & scoring</a>
+  <a href="#s5">5 · Connections & ML</a>
+  <a href="#s6">6 · NumPy</a>
+  <a href="#ref">Rules & traps</a>
+  <a href="#exercises">Exercises</a>
+  <a href="#interview">Interview</a>
+  <a href="#summary">Summary</a>
+</nav>
+
+<div class="scrollbtns">
+  <button id="goTop" aria-label="Scroll to top">↑</button>
+  <button id="goBottom" aria-label="Scroll to bottom">↓</button>
+</div>
+
+<header class="hero">
+  <div class="page"><div class="hero-inner">
+    <div class="eyebrow">Advanced · Generative &amp; Deep Models · 20</div>
+    <h1>Normalizing Flows &amp; Change of Variables</h1>
+    <p class="lede">Every other generative model gives up something on likelihood — VAEs settle for a lower bound, GANs give none, diffusion needs many steps. Flows are the exception: a chain of <em>invertible</em> transforms turns a simple base density into a rich one whose <strong>exact</strong> density you can compute — by tracking how much each transform stretches space.</p>
+    <div class="meta"><span>~21 min read</span><span class="dot"></span><span>NumPy-verified</span><span class="dot"></span><span>Prereq: Jacobians (S3), Gaussians, VAE (S18)</span></div>
+  </div></div>
+</header>
+
+<div class="page">
+<article>
+<p class="dropcap">A normalizing flow is built from functions that are <strong>invertible</strong> and whose <strong>Jacobian determinant is easy to compute</strong>. Push a simple base variable $z\sim\mathcal N(0,I)$ through such a map $x=g(z)$ and you get a complicated distribution over $x$ — yet you can still write down its <em>exact</em> log-density, because the <strong>change-of-variables formula</strong> tells you precisely how the density warps. That single formula, plus a clever choice of transforms so the Jacobian stays cheap, is the whole subject.</p>
+
+<div class="objectives">
+  <div class="lbl">By the end you will be able to</div>
+  <ul>
+    <li>State and apply the change-of-variables formula $p_x(x)=p_z(f(x))\,\lvert\det J_f(x)\rvert$.</li>
+    <li>Write the log-likelihood of a flow as base log-density plus accumulated log-determinants.</li>
+    <li>Explain why we need transforms with a <strong>tractable, cheap</strong> Jacobian determinant.</li>
+    <li>Describe a <strong>coupling layer</strong> (RealNVP): triangular Jacobian, invertible, $\log\lvert\det\rvert=\sum s$.</li>
+    <li>Compare flows to VAEs, diffusion, and GANs on the exact-likelihood / sampling trade-off.</li>
+  </ul>
+</div>
+
+<div class="mmlbar">
+  <span class="bk">📖</span>
+  <div><b>Companion reference.</b> Rezende &amp; Mohamed 2015 (normalizing flows for VI); Dinh et al. 2015/2017 (NICE, RealNVP); Kingma &amp; Dhariwal 2018 (Glow); Papamakarios et al. 2021 (survey). Builds on the Jacobian from Session 3 and the latent-variable view from Session 18.</div>
+</div>
+
+<nav class="secnav" aria-label="Jump to section">
+  <a href="#s1"><span class="n">01</span><span class="t">The exact-likelihood family</span></a>
+  <a href="#s2"><span class="n">02</span><span class="t">Change of variables</span></a>
+  <a href="#s3"><span class="n">03</span><span class="t">Composing invertible layers</span></a>
+  <a href="#s4"><span class="n">04</span><span class="t">Sampling &amp; scoring</span></a>
+  <a href="#s5"><span class="n">05</span><span class="t">Connections &amp; where it lives</span></a>
+  <a href="#s6"><span class="n">06</span><span class="t">NumPy</span></a>
+  <a href="#exercises"><span class="n">▷</span><span class="t">Exercises + solutions</span></a>
+  <a href="#interview"><span class="n">▷</span><span class="t">Interview questions</span></a>
+</nav>
+
+<details class="notation">
+  <summary>Notation reference</summary>
+  <div class="notation-grid">
+    <span class="sym">$z$</span><span class="def">Base variable, $z\sim p_z$ (usually $\mathcal N(0,I)$); $x=g(z)$ is the data-space sample.</span>
+    <span class="sym">$f=g^{-1}$</span><span class="def">The inverse (data $\to$ base) direction; $z=f(x)$.</span>
+    <span class="sym">$J_f(x)$</span><span class="def">Jacobian $\partial f/\partial x$; $\lvert\det J_f\rvert$ is the local volume-change factor.</span>
+    <span class="sym">$\log\lvert\det J\rvert$</span><span class="def">The log-det term added to the base log-density (the &ldquo;stretch correction&rdquo;).</span>
+    <span class="sym">coupling</span><span class="def">A layer that transforms half the coordinates conditioned on the other half.</span>
+  </div>
+</details>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">Section 1</span>The one family with exact likelihoods</h2>
+<p>Generative models face a trade-off often called the trilemma — fast sampling, high quality, and exact likelihood are hard to get all at once:</p>
+<ul>
+  <li><strong>VAEs (S18):</strong> give only a <em>lower bound</em> (the ELBO) on $\log p(x)$ — you never get the exact number.</li>
+  <li><strong>GANs:</strong> sample beautifully but provide <em>no</em> density at all — you can't score a point.</li>
+  <li><strong>Diffusion (S19):</strong> excellent samples and (via the probability-flow ODE) a likelihood, but sampling is many sequential steps.</li>
+  <li><strong>Flows:</strong> give the <em>exact</em> $\log p(x)$ in a single forward pass, and sample in a single inverse pass — the price is architectural (every layer must be invertible with a cheap Jacobian).</li>
+</ul>
+<p>Being able to compute an exact likelihood is what lets flows be trained by plain maximum likelihood (Session 10) — no bound, no adversary — and used directly for density estimation, anomaly detection, and as flexible posteriors in variational inference.</p>
+
+<div class="callout c-anchor"><span class="tag">Analogy</span>
+Think of a fixed lump of <strong>modeling clay</strong> whose total volume is exactly $1$ — that's the probability mass. An invertible map reshapes the lump: wherever it <em>stretches</em> space out, the same mass spreads over more room, so the density thins; wherever it <em>compresses</em>, the mass piles up and density rises. The Jacobian determinant $\lvert\det J\rvert$ is precisely the local stretch factor — the bookkeeping that keeps the total mass at $1$ no matter how you knead the clay.</div>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">Section 2</span>The change-of-variables formula</h2>
+<p>If $x=g(z)$ is invertible with inverse $z=f(x)$, conservation of probability mass (&ldquo;the clay&rdquo;) gives the density of $x$ exactly:</p>
+<div class="mathband">$$ p_x(x) = p_z\big(f(x)\big)\,\Big\lvert\det \tfrac{\partial f}{\partial x}\Big\rvert = p_z\big(f(x)\big)\,\Big\lvert\det \tfrac{\partial g}{\partial z}\Big\rvert^{-1}. $$</div>
+<p>The determinant is the local volume-change factor: it corrects for how much the map stretches or squeezes a tiny neighborhood. Taking logs turns the product into the form used for training — a sum you can differentiate and maximize:</p>
+<div class="mathband">$$ \log p_x(x) = \log p_z\big(f(x)\big) + \log\Big\lvert\det \tfrac{\partial f}{\partial x}\Big\rvert. $$</div>
+<p>In 1-D this is just $p_x(x)=p_z(f(x))\,\lvert f'(x)\rvert$ — the familiar &ldquo;divide by the derivative&rdquo; rule. The determinant is the multivariate generalization of that derivative.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+For the affine flow $z=(x-\mu)/\sigma$ with base $\mathcal N(0,1)$, the change-of-variables log-density at $x=3$ ($\mu{=}1.5,\sigma{=}2$) is $-1.893336$, exactly matching the direct $\mathcal N(1.5,2^2)$ log-density (E1), and the resulting $p_x$ integrates to $1.000000$ (E2) — mass is conserved.</div>
+
+<figure class="fig">
+  <div class="frame">
+    <canvas id="flowplay" width="880" height="470"></canvas>
+    <div class="ctrlrow"><span class="lbl2">an invertible warp turning one Gaussian into two humps</span></div>
+    <div class="slider-row"><span>warp strength k →</span><input type="range" id="sK" min="0" max="3" step="0.05" value="1.4"></div>
+    <div class="readout">
+      <span><span class="k">log|det| at center</span> = <span class="va" id="rLD">…</span></span>
+      <span><span class="k">shape</span> = <span class="vd" id="rModes">…</span></span>
+    </div>
+  </div>
+  <figcaption><strong>Figure 1 — Density warping under an invertible map.</strong> A base $z\sim\mathcal N(0,1)$ (faint) pushed through the monotonic map $x=z+k\tanh z$. At the center the map stretches space by $g'(0)=1+k$, so probability thins there and a <em>dip</em> opens up — a single Gaussian becomes bimodal. Slide $k$: the transformed density (solid) is computed <em>exactly</em> via change of variables, $p_x(x)=\varphi(z)/g'(z)$. No sampling, no bound — the density is analytic.</figcaption>
+</figure>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">Section 3</span>Composing invertible layers — and the log-det trick</h2>
+<p>A single simple map can't reshape a Gaussian into anything interesting, so we <strong>compose</strong> many: $g=g_K\circ\cdots\circ g_1$. Invertibility composes (invert in reverse order), and log-determinants simply <em>add</em>:</p>
+<div class="mathband">$$ \log p_x(x) = \log p_z(z) + \sum_{k=1}^{K} \log\Big\lvert\det \tfrac{\partial f_k}{\partial h_{k-1}}\Big\rvert. $$</div>
+<p>The catch: a general $d\times d$ Jacobian determinant costs $O(d^3)$ — hopeless in high dimensions. The whole art is designing layers whose Jacobian is <strong>triangular</strong>, so its determinant is just the product of the diagonal ($O(d)$). The workhorse is the <strong>affine coupling layer</strong> (RealNVP): split $x=(x_a,x_b)$, leave $x_a$ untouched, and transform $x_b$ using functions of $x_a$:</p>
+<div class="mathband">$$ y_a = x_a,\qquad y_b = x_b\odot\exp\!\big(s(x_a)\big) + t(x_a). $$</div>
+<p>Because $y_a$ depends only on $x_a$ and $y_b$'s scaling depends only on $x_a$, the Jacobian is triangular and $\log\lvert\det\rvert=\sum s(x_a)$ — independent of the (arbitrarily complex) networks $s,t$. It inverts in closed form: $x_b=(y_b-t(y_a))\odot\exp(-s(y_a))$. Stack these, permuting which half is frozen, and you get an expressive, exactly-invertible flow.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+A RealNVP affine coupling layer round-trips to machine precision — forward then inverse recovers the input with error $1.1\times10^{-16}$ (E3) — and its analytic log-determinant $\sum s(x_a)=-0.038079$ matches a brute-force numeric Jacobian determinant $-0.038079$ (E4).</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">Section 4</span>Two directions: sampling and scoring</h2>
+<p>A trained flow is used in whichever direction you need — this is its defining feature:</p>
+<ul>
+  <li><strong>Sample</strong> (generate): draw $z\sim\mathcal N(0,I)$, push forward $x=g(z)$. One pass, no iteration.</li>
+  <li><strong>Score</strong> (evaluate density): given $x$, run the inverse $z=f(x)$ and accumulate log-dets to get the <em>exact</em> $\log p_x(x)$.</li>
+</ul>
+<p>Coupling flows do <em>both</em> cheaply. Autoregressive flows (MAF/IAF) trade off: one direction is fast, the other sequential — MAF scores fast (good for density estimation), IAF samples fast (good as a variational posterior). Training is plain maximum likelihood: maximize $\log p_x(x)$ over data, which by the formula is base-log-density plus log-dets — fully differentiable.</p>
+<div class="callout c-good"><span class="tag">Verified</span>
+Scoring a point through a one-coupling flow (base $\mathcal N(0,I)$ in 4-D) gives the exact $\log p_x(x)=-3.818965$ — base log-density of $f(x)$ plus the layer's log-det, computed in a single inverse pass (E5).</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">Section 5</span>Connections &amp; where it lives</h2>
+<p>Flows sit at the intersection of most of this track:</p>
+<ul>
+  <li><strong>Jacobians (Session 3):</strong> the log-det term <em>is</em> the Jacobian machinery — this is where it earns its keep.</li>
+  <li><strong>Maximum likelihood (Session 10):</strong> flows are trained by exact MLE — no ELBO gap, no adversary.</li>
+  <li><strong>Variational inference (Session 12):</strong> a flow makes a flexible posterior $q$ — &ldquo;normalizing flows&rdquo; were introduced precisely to sharpen the ELBO; IAF powers expressive VAE posteriors.</li>
+  <li><strong>Diffusion (Session 19):</strong> the probability-flow ODE is a continuous-time flow; continuous normalizing flows (FFJORD) use the same change-of-variables idea with an ODE solver.</li>
+  <li><strong>In practice:</strong> RealNVP / Glow for images, WaveGlow / Flow-TTS for audio, flows for density estimation, out-of-distribution / anomaly detection (exact likelihood flags unlikely inputs), and normalizing-flow posteriors in probabilistic programming.</li>
+</ul>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">Section 6</span>Doing it in NumPy <span style="font-size:.7rem;color:var(--teal)">✓ outputs verified</span></h2>
+
+<pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+rng = np.random.default_rng(<span class="n">0</span>)
+
+<span class="c"># --- change of variables: affine flow z=(x-mu)/s matches N(mu,s^2) exactly ---</span>
+mu, s = <span class="n">1.5</span>, <span class="n">2.0</span>
+base = <span class="k">lambda</span> z: -<span class="n">0.5</span>*z**<span class="n">2</span> - <span class="n">0.5</span>*np.log(<span class="n">2</span>*np.pi)
+x = <span class="n">3.0</span>; z = (x-mu)/s
+logpx = base(z) + np.log(<span class="n">1</span>/s)               <span class="c"># + log|dz/dx|</span>
+<span class="f">print</span>(<span class="f">round</span>(logpx,<span class="n">6</span>))                        <span class="c"># -1.893336  == N(1.5,2^2) logpdf</span>
+
+<span class="c"># --- RealNVP affine coupling: invertible, triangular Jacobian ---</span>
+x = rng.standard_normal(<span class="n">4</span>); a, b = x[:<span class="n">2</span>], x[<span class="n">2</span>:]
+W = rng.standard_normal((<span class="n">2</span>,<span class="n">2</span>))*<span class="n">0.5</span>; c = rng.standard_normal(<span class="n">2</span>)*<span class="n">0.3</span>
+scale = <span class="k">lambda</span> a: np.tanh(W@a); transl = <span class="k">lambda</span> a: W@a + c
+sca = scale(a)
+y = np.concatenate([a, b*np.exp(sca) + transl(a)])   <span class="c"># forward</span>
+xi = np.concatenate([y[:<span class="n">2</span>], (y[<span class="n">2</span>:]-transl(y[:<span class="n">2</span>]))*np.exp(-scale(y[:<span class="n">2</span>]))])
+<span class="f">print</span>(np.max(np.abs(x-xi)))               <span class="c"># 1.1e-16  (exact inverse)</span>
+<span class="f">print</span>(<span class="f">round</span>(sca.sum(),<span class="n">6</span>))                    <span class="c"># -0.038079  == log|det J|</span></pre>
+<div class="out">-1.893336
+1.1102230246251565e-16
+-0.038079        # analytic log|det| = numeric log|det J| = -0.038079</div>
+
+<div class="callout c-why"><span class="tag">Computational &amp; memory cost</span>
+A general Jacobian determinant is $O(d^3)$ — a non-starter in high dimensions. Coupling and autoregressive layers force a <strong>triangular</strong> Jacobian, dropping the log-det to $O(d)$ (just sum the diagonal). The real cost is <strong>expressivity per parameter</strong>: because every layer must be invertible with cheap log-det, flows typically need <em>more</em> layers/parameters than a VAE or GAN to reach comparable sample quality, and both directions must be stored/computed. Memory-wise the invertibility is a gift — activations can be recomputed from outputs, cutting storage during backprop.</div>
+
+<h3>Quick self-check</h3>
+<div class="quiz" data-answer="1">
+  <div class="qz">Why must a normalizing flow's transforms be invertible with a cheap Jacobian determinant?</div>
+  <button class="opt">To make sampling stochastic.</button>
+  <button class="opt">So the exact density follows from change of variables and the log-det stays tractable.</button>
+  <button class="opt">To avoid needing a base distribution.</button>
+  <div class="fb"></div>
+</div>
+<div class="quiz" data-answer="0">
+  <div class="qz">What is the log-determinant of a RealNVP affine coupling layer?</div>
+  <button class="opt">$\sum s(x_a)$ — the sum of the log-scales, independent of $s,t$'s complexity.</button>
+  <button class="opt">The full $O(d^3)$ determinant of a dense Jacobian.</button>
+  <button class="opt">Always zero, because coupling layers preserve volume.</button>
+  <div class="fb"></div>
+</div>
+
+<hr class="divider">
+
+<!-- RULES -->
+<h2 id="ref"><span class="num">Reference</span>Edge cases, rules &amp; traps</h2>
+<h3>Edge cases &amp; gotchas</h3>
+<ul>
+  <li><strong>Dimension must be preserved:</strong> $g$ is a bijection on $\mathbb R^d$, so a flow can't change dimensionality (unlike a VAE's encoder). Base and data live in the same $d$.</li>
+  <li><strong>Absolute value on the determinant</strong> is essential — density is non-negative even when the map flips orientation ($\det<0$).</li>
+  <li><strong>Numerical stability:</strong> parameterize the scale as $\exp(s)$ (never a raw multiplier that could hit $0$) and often bound $s$ (e.g. $\tanh$) so log-dets don't explode.</li>
+  <li><strong>Permutations / $1\times1$ convolutions</strong> (Glow) between coupling layers are needed so every coordinate eventually gets transformed — otherwise the frozen half never mixes.</li>
+  <li><strong>Discrete data</strong> breaks the continuous change-of-variables formula; dequantization (adding small noise) is required for images.</li>
+</ul>
+<div class="callout c-trap"><span class="tag">Trap 1 · Forgetting the log-det term</span>Training on $\log p_z(f(x))$ alone (dropping $\log\lvert\det J\rvert$) is not maximum likelihood — the model will collapse the map to something degenerate. The log-det is what penalizes cheating by squashing everything to the base's mode.</div>
+<div class="callout c-trap"><span class="tag">Trap 2 · Assuming any invertible net is practical</span>Invertibility is necessary but not sufficient — if the Jacobian determinant isn't cheap (triangular / structured), the model is untrainable at scale. Architecture is chosen for the <em>determinant</em>, not just invertibility.</div>
+<div class="callout c-trap"><span class="tag">Trap 3 · Expecting VAE-style dimensionality reduction</span>Flows keep dimension fixed; there's no low-dimensional bottleneck. For compression you need a VAE or a flow <em>in</em> a latent space, not a plain flow.</div>
+
+<h3>Golden rules</h3>
+<ol class="rules">
+  <li>Flow = base density $+$ <strong>invertible</strong> map; density comes from <strong>change of variables</strong>.</li>
+  <li>$\log p_x(x)=\log p_z(f(x))+\log\lvert\det J_f\rvert$ — always keep the log-det term.</li>
+  <li>Compose many layers; <strong>log-dets add</strong>.</li>
+  <li>Design layers for a <strong>triangular Jacobian</strong> ($O(d)$ det), e.g. coupling / autoregressive.</li>
+  <li>Coupling layer log-det $=\sum s(x_a)$; inverts in closed form.</li>
+  <li>The <em>one</em> family with <strong>exact likelihood</strong> + one-pass sampling — the price is architectural constraints and dimension preservation.</li>
+</ol>
+
+<hr class="divider">
+
+<!-- SECOND VIEW -->
+<figure class="diagram"><div class="frame">
+<svg viewBox="0 0 620 190" role="img" aria-label="base density transformed through invertible flow layers into data density">
+  <defs><marker id="ff" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5A4FCF"/></marker>
+  <marker id="fr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#0E8C80"/></marker></defs>
+  <g font-family="JetBrains Mono, monospace" font-size="12" text-anchor="middle" fill="#26252E">
+    <!-- base bump -->
+    <path d="M28,120 Q60,60 92,120" fill="rgba(90,79,207,.14)" stroke="#5A4FCF" stroke-width="2"/>
+    <text x="60" y="140">z ~ N(0,I)</text>
+    <!-- layer boxes -->
+    <rect x="150" y="86" width="70" height="40" rx="9" fill="rgba(90,79,207,.10)" stroke="#5A4FCF"/><text x="185" y="110">g₁</text>
+    <rect x="275" y="86" width="70" height="40" rx="9" fill="rgba(90,79,207,.10)" stroke="#5A4FCF"/><text x="310" y="110">g₂</text>
+    <rect x="400" y="86" width="70" height="40" rx="9" fill="rgba(90,79,207,.10)" stroke="#5A4FCF"/><text x="435" y="110">g_K</text>
+    <!-- data density (bimodal) -->
+    <path d="M520,130 Q545,80 560,118 Q575,80 600,130" fill="rgba(14,140,128,.14)" stroke="#0E8C80" stroke-width="2"/>
+    <text x="560" y="150">x = g(z)</text>
+    <!-- forward arrows -->
+    <line x1="96" y1="106" x2="146" y2="106" stroke="#5A4FCF" stroke-width="2" marker-end="url(#ff)"/>
+    <line x1="222" y1="106" x2="271" y2="106" stroke="#5A4FCF" stroke-width="2" marker-end="url(#ff)"/>
+    <line x1="347" y1="106" x2="396" y2="106" stroke="#5A4FCF" stroke-width="2" marker-end="url(#ff)"/>
+    <line x1="474" y1="106" x2="516" y2="106" stroke="#5A4FCF" stroke-width="2" marker-end="url(#ff)"/>
+    <text x="300" y="70" fill="#5A4FCF" font-size="10">sample →  push forward g(z)</text>
+    <!-- inverse arrow -->
+    <line x1="516" y1="162" x2="96" y2="162" stroke="#0E8C80" stroke-width="1.6" marker-end="url(#fr)" stroke-dasharray="5 4"/>
+    <text x="300" y="182" fill="#0E8C80" font-size="10">score ←  invert f(x), sum log|det| for exact log p(x)</text>
+  </g>
+</svg>
+<div class="dcap" style="margin-top:10px">Forward warps a simple base into complex data; inverse + log-dets give the exact density</div>
+</div>
+<figcaption><strong>Figure 2 — A flow, both directions.</strong> A second view: composing invertible layers $g_1,\dots,g_K$ (indigo, forward) stretches a standard-normal base into a multimodal data density — that direction <em>samples</em>. Running it backward (teal, dashed) and summing each layer's $\log\lvert\det J\rvert$ gives the <em>exact</em> $\log p_x(x)$ — that direction <em>scores</em>.</figcaption>
+</figure>
+
+<hr class="divider">
+
+<!-- EXERCISES -->
+<h2 id="exercises"><span class="num">Practice</span>Exercises</h2>
+<p style="color:var(--muted); font-size:.95rem;">Verify change of variables and a coupling layer.</p>
+
+<div class="ex"><span class="h">E1</span><span class="pill p-e">easy</span><p>Show the affine flow $z=(x-\mu)/\sigma$ with base $\mathcal N(0,1)$ reproduces the $\mathcal N(\mu,\sigma^2)$ log-density at $x=3$ ($\mu{=}1.5,\sigma{=}2$).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">mu,s=<span class="n">1.5</span>,<span class="n">2.0</span>; base=<span class="k">lambda</span> z:-<span class="n">0.5</span>*z**<span class="n">2</span>-<span class="n">0.5</span>*np.log(<span class="n">2</span>*np.pi)
+x=<span class="n">3.0</span>; base((x-mu)/s)+np.log(<span class="n">1</span>/s)          <span class="c"># -1.893336</span>
+-<span class="n">0.5</span>*((x-mu)/s)**<span class="n">2</span>-np.log(s*np.sqrt(<span class="n">2</span>*np.pi))  <span class="c"># -1.893336</span></pre>
+    <p>The $\log(1/\sigma)=\log\lvert dz/dx\rvert$ term is exactly the log-det in 1-D.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E2</span><span class="pill p-e">easy</span><p>Confirm the transformed density integrates to $1$ (mass conservation).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">xs=np.linspace(-<span class="n">20</span>,<span class="n">20</span>,<span class="n">200001</span>)
+dens=np.exp(base((xs-mu)/s))*(<span class="n">1</span>/s)
+np.trapezoid(dens,xs)                     <span class="c"># 1.000000</span></pre>
+    <p>The Jacobian factor is exactly what keeps total probability at $1$ after the warp.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E3</span><span class="pill p-m">medium</span><p>Implement a RealNVP affine coupling layer and verify forward-then-inverse recovers the input.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code">x=rng.standard_normal(<span class="n">4</span>); a,b=x[:<span class="n">2</span>],x[<span class="n">2</span>:]
+W=rng.standard_normal((<span class="n">2</span>,<span class="n">2</span>))*<span class="n">.5</span>; c=rng.standard_normal(<span class="n">2</span>)*<span class="n">.3</span>
+sc=<span class="k">lambda</span> a:np.tanh(W@a); tr=<span class="k">lambda</span> a:W@a+c
+y=np.concatenate([a, b*np.exp(sc(a))+tr(a)])
+xi=np.concatenate([y[:<span class="n">2</span>],(y[<span class="n">2</span>:]-tr(y[:<span class="n">2</span>]))*np.exp(-sc(y[:<span class="n">2</span>]))])
+np.max(np.abs(x-xi))                      <span class="c"># 1.1e-16</span></pre>
+    <p>The frozen half $x_a$ carries the information needed to undo the transform on $x_b$.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E4</span><span class="pill p-m">medium</span><p>Check the coupling layer's analytic log-det $\sum s(x_a)$ against a numeric Jacobian determinant.</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">def</span> <span class="f">fwd</span>(v):
+    a,b=v[:<span class="n">2</span>],v[<span class="n">2</span>:]; <span class="k">return</span> np.concatenate([a,b*np.exp(sc(a))+tr(a)])
+eps=<span class="n">1e-6</span>; J=np.zeros((<span class="n">4</span>,<span class="n">4</span>))
+<span class="k">for</span> j <span class="k">in</span> <span class="f">range</span>(<span class="n">4</span>):
+    xp=x.copy(); xp[j]+=eps; xm=x.copy(); xm[j]-=eps
+    J[:,j]=(fwd(xp)-fwd(xm))/(<span class="n">2</span>*eps)
+sc(a).sum(), np.log(np.abs(np.linalg.det(J)))  <span class="c"># -0.038079, -0.038079</span></pre>
+    <p>Triangular Jacobian ⇒ determinant is the product of the diagonal $\exp(s)$ terms ⇒ log-det $=\sum s$.</p>
+  </div></details>
+</div>
+
+<div class="ex"><span class="h">E5</span><span class="pill p-h">hard</span><p>Compute the exact $\log p_x(x)$ of a one-coupling flow (base $\mathcal N(0,I)$ in 4-D).</p>
+  <details class="sol"><summary>Show solution</summary><div class="sol-body">
+    <pre class="code"><span class="k">def</span> <span class="f">logpx</span>(x):
+    a,b=x[:<span class="n">2</span>],x[<span class="n">2</span>:]; s=sc(a)
+    z=np.concatenate([a, b*np.exp(s)+tr(a)])
+    <span class="k">return</span> np.sum(-<span class="n">0.5</span>*z**<span class="n">2</span>-<span class="n">0.5</span>*np.log(<span class="n">2</span>*np.pi)) + s.sum()
+logpx(x)                                  <span class="c"># -3.818965</span></pre>
+    <p>Base log-density of the pushed point plus the layer's log-det — the whole training objective, in one line.</p>
+  </div></details>
+</div>
+
+<hr class="divider">
+
+<!-- INTERVIEW -->
+<h2 id="interview"><span class="num">Interview</span>Questions you should be able to answer</h2>
+<div class="qa"><div class="q">Q1 · What is a normalizing flow?</div><div class="a">A generative model that maps a simple base density (e.g. $\mathcal N(0,I)$) through a chain of invertible transforms; the change-of-variables formula gives the <em>exact</em> density of the result, so it trains by maximum likelihood.</div></div>
+<div class="qa"><div class="q">Q2 · Write the log-likelihood of a flow.</div><div class="a">$\log p_x(x)=\log p_z(f(x))+\sum_k\log\lvert\det J_{f_k}\rvert$ — base log-density of the inverted point plus the summed log-determinants of each layer.</div></div>
+<div class="qa"><div class="q">Q3 · Why coupling layers?</div><div class="a">They're invertible in closed form and have a <em>triangular</em> Jacobian, so the log-det is just $\sum s(x_a)$ ($O(d)$) regardless of how complex the $s,t$ networks are — making high-dimensional flows trainable.</div></div>
+<div class="qa"><div class="q">Q4 · Flows vs VAEs vs GANs on likelihood?</div><div class="a">Flows give <em>exact</em> $\log p(x)$; VAEs give only a lower bound (ELBO); GANs give no density at all. The cost of flows is that every layer must be invertible with a cheap Jacobian, and dimension is preserved.</div></div>
+<div class="qa"><div class="q">Q5 · Why can't a flow reduce dimensionality?</div><div class="a">The map is a bijection on $\mathbb R^d$, so base and data share the same dimension — there's no bottleneck. Reduction needs a VAE, or a flow operating inside a latent space.</div></div>
+
+<hr class="divider">
+
+<!-- SUMMARY -->
+<h2 id="summary"><span class="num">Recap</span>Summary</h2>
+<table class="sum">
+  <thead><tr><th>Concept</th><th>Why it matters in ML</th><th>Interview freq.</th></tr></thead>
+  <tbody>
+  <tr><td>Change-of-variables formula</td><td>Exact density under a warp</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Log-det of the Jacobian</td><td>The &ldquo;stretch correction&rdquo; term</td><td class="freq f-vh">Very high</td></tr>
+  <tr><td>Composing layers (log-dets add)</td><td>Build expressive flows</td><td class="freq f-h">High</td></tr>
+  <tr><td>Coupling layer (RealNVP)</td><td>Triangular Jacobian, $O(d)$ det</td><td class="freq f-h">High</td></tr>
+  <tr><td>Exact MLE training</td><td>No bound, no adversary</td><td class="freq f-m">Medium</td></tr>
+  <tr><td>Flows vs VAE/GAN/diffusion</td><td>The likelihood trade-off</td><td class="freq f-h">High</td></tr>
+  </tbody>
+</table>
+
+<div class="conceptcard">
+  <span class="cc-label">◆ Concept Card</span>
+  <div class="cc-title">Track how densities warp, and you get exact likelihoods for free.</div>
+  <p><span class="cc-sub">Reusable idea:</span> an invertible map plus the Jacobian determinant lets you move a density between spaces exactly.</p>
+  <ul>
+    <li><strong>Change of variables:</strong> $p_x(x)=p_z(f(x))\,\lvert\det J_f\rvert$; in logs, base log-density $+\log\lvert\det J\rvert$.</li>
+    <li><strong>Compose</strong> many invertible layers — log-dets simply add.</li>
+    <li><strong>Keep the Jacobian triangular</strong> (coupling / autoregressive) so the log-det is $O(d)$; RealNVP's is $\sum s(x_a)$.</li>
+    <li><strong>Two directions:</strong> forward $g$ samples, inverse $f$ scores — the only family with exact likelihood <em>and</em> one-pass sampling.</li>
+  </ul>
+  <div class="cc-hook"><b>The single hook:</b> probability is a fixed lump of clay — reshape it with an invertible map and the Jacobian determinant tells you exactly how the density thins where you stretch and piles up where you squeeze, so the total mass stays $1$ and the likelihood stays <em>exact</em>.</div>
+</div>
+
+<div class="next">
+  <span class="lbl">Next session</span>
+  <h3>21 · Capstone: Optimization Meets Inference ★ →</h3>
+  <p style="margin:6px 0 0; color:var(--muted);">One modern training objective, dissected: how curvature (Pillar I–II), duality, divergences (Pillar V), and the generative families you just met fuse into a single loss you can read term by term. <em>(The finale of the advanced track.)</em></p>
+</div>
+</article>
+</div>
+
+<script src="../assets/sessions.js"></script>
+<script src="../assets/common.js"></script>
+<script src="_extra.js"></script>
+</body>
+</html>
