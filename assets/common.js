@@ -34,15 +34,39 @@
         <button class="ddbtn" id="searchBtn" aria-label="Search lessons" title="Search lessons (press / or ⌘K)">🔍 Search</button>
         <div class="dd">
           <button class="ddbtn" id="ddBtn" aria-haspopup="true" aria-expanded="false">Sessions ▾</button>
-          <div class="ddpanel" id="ddPanel" role="menu">${items}</div>
+          <div class="ddpanel" id="ddPanel" role="menu"><div class="dd-bubbles" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="dd-scroll">${items}</div></div>
         </div>
         <button id="themeToggle" class="navtoggle" aria-label="Toggle theme">🌙</button>
       </div>`;
     body.insertBefore(nav, body.firstChild);
     const btn = nav.querySelector("#ddBtn"), panel = nav.querySelector("#ddPanel");
+    const ddItems = () => [...panel.querySelectorAll("a.dd-item")];
+    function openDD(focusFirst){
+      panel.classList.add("open"); btn.setAttribute("aria-expanded", "true");
+      const items = ddItems();
+      const target = panel.querySelector("a.dd-item.here") || (focusFirst ? items[0] : null);
+      if (target) setTimeout(() => target.focus(), reduced ? 0 : 70);
+    }
+    function closeDD(refocus){
+      panel.classList.remove("open"); btn.setAttribute("aria-expanded", "false");
+      if (refocus) btn.focus();
+    }
     btn.addEventListener("click", e => { e.stopPropagation();
-      const open = panel.classList.toggle("open"); btn.setAttribute("aria-expanded", open); });
-    document.addEventListener("click", () => { panel.classList.remove("open"); btn.setAttribute("aria-expanded","false"); });
+      panel.classList.contains("open") ? closeDD(false) : openDD(false); });
+    btn.addEventListener("keydown", e => {
+      if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " "){ e.preventDefault(); openDD(true); } });
+    panel.addEventListener("click", e => e.stopPropagation());       // clicks inside stay open
+    document.addEventListener("click", () => { if (panel.classList.contains("open")) closeDD(false); });
+    panel.addEventListener("keydown", e => {                         // arrow-key navigation within the menu
+      const items = ddItems(); if (!items.length) return;
+      const idx = items.indexOf(document.activeElement);
+      if (e.key === "ArrowDown"){ e.preventDefault(); items[idx < 0 ? 0 : Math.min(items.length - 1, idx + 1)].focus(); }
+      else if (e.key === "ArrowUp"){ e.preventDefault(); items[idx <= 0 ? 0 : idx - 1].focus(); }
+      else if (e.key === "Home"){ e.preventDefault(); items[0].focus(); }
+      else if (e.key === "End"){ e.preventDefault(); items[items.length - 1].focus(); }
+    });
+    document.addEventListener("keydown", e => {                      // Escape dismissal
+      if (e.key === "Escape" && panel.classList.contains("open")) closeDD(true); });
     const sbtn = nav.querySelector("#searchBtn");
     if (sbtn) sbtn.addEventListener("click", () => { if (window.MFML_openSearch) window.MFML_openSearch(); });
   }

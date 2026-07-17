@@ -263,27 +263,72 @@
   .ddbtn{background:var(--accent-soft); color:var(--accent); border:1px solid transparent; border-radius:20px;
     padding:7px 14px; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:.74rem;}
   .ddbtn:hover{border-color:var(--accent);}
-  .ddpanel{position:absolute; top:50px; right:0; width:320px; max-height:70vh; overflow-y:auto;
-    background:color-mix(in srgb, var(--card) 76%, transparent);
-    -webkit-backdrop-filter:blur(22px) saturate(180%); backdrop-filter:blur(22px) saturate(180%);
-    border:1px solid rgba(255,255,255,.5); border-radius:18px; padding:8px;
-    box-shadow:0 24px 60px rgba(20,18,25,.28), 0 2px 8px rgba(20,18,25,.12), inset 0 1px 0 rgba(255,255,255,.6);
-    opacity:0; visibility:hidden; transform-origin:top right; transform:translateY(-12px) scale(.9);
-    transition:opacity .22s ease, transform .3s cubic-bezier(.34,1.45,.5,1), visibility .22s;}
+  /* ── layered translucent-glass lessons dropdown ── */
+  .ddpanel{position:absolute; top:50px; right:0; width:344px; max-height:76vh; overflow:hidden;
+    background:color-mix(in srgb, var(--card) 68%, transparent);
+    -webkit-backdrop-filter:blur(30px) saturate(200%); backdrop-filter:blur(30px) saturate(200%);
+    border:1px solid rgba(255,255,255,.55); border-radius:22px;
+    box-shadow:0 30px 72px rgba(20,18,25,.34), 0 3px 10px rgba(20,18,25,.14),
+      inset 0 1px 0 rgba(255,255,255,.7), inset 0 0 46px rgba(255,255,255,.05);
+    opacity:0; visibility:hidden; transform-origin:top right; transform:translateY(-14px) scale(.9);
+    transition:opacity .24s ease, transform .34s cubic-bezier(.34,1.5,.5,1), visibility .24s;}
   @supports not (backdrop-filter: blur(1px)){ .ddpanel{background:var(--card);} }
+  .ddpanel::before{content:""; position:absolute; inset:0; z-index:2; pointer-events:none; border-radius:inherit;
+    background:linear-gradient(150deg, rgba(255,255,255,.24), rgba(255,255,255,0) 44%);}
   .ddpanel.open{opacity:1; visibility:visible; transform:translateY(0) scale(1);}
+  /* floating bubbles behind the items */
+  .dd-bubbles{position:absolute; inset:0; z-index:0; overflow:hidden; pointer-events:none; border-radius:inherit;}
+  .dd-bubbles span{position:absolute; bottom:-32px; border-radius:50%; opacity:.5;
+    background:radial-gradient(circle at 32% 30%, color-mix(in srgb,var(--accent) 55%,transparent), color-mix(in srgb,var(--accent) 10%,transparent) 70%);
+    animation:ddrise linear infinite;}
+  .dd-bubbles span:nth-child(1){left:8%;  width:46px; height:46px; animation-duration:13s; animation-delay:0s;}
+  .dd-bubbles span:nth-child(2){left:30%; width:26px; height:26px; animation-duration:10s; animation-delay:-3s;}
+  .dd-bubbles span:nth-child(3){left:52%; width:60px; height:60px; animation-duration:16s; animation-delay:-6s;}
+  .dd-bubbles span:nth-child(4){left:70%; width:20px; height:20px; animation-duration:9s;  animation-delay:-1s;}
+  .dd-bubbles span:nth-child(5){left:84%; width:38px; height:38px; animation-duration:14s; animation-delay:-8s;}
+  .dd-bubbles span:nth-child(6){left:20%; width:16px; height:16px; animation-duration:8s;  animation-delay:-4s;}
+  @keyframes ddrise{0%{transform:translateY(0) scale(.9); opacity:0;} 14%{opacity:.5;} 86%{opacity:.5;} 100%{transform:translateY(-120%) scale(1.15); opacity:0;}}
+  .dd-scroll{position:relative; z-index:1; max-height:76vh; overflow-y:auto; padding:8px; scrollbar-width:thin;}
   /* items settle in as the panel floats open */
-  .ddpanel .dd-group,.ddpanel .dd-item{opacity:0; transform:translateY(5px); transition:opacity .3s ease .04s, transform .3s ease .04s;}
+  .ddpanel .dd-group,.ddpanel .dd-item{opacity:0; transform:translateY(6px); transition:opacity .3s ease .05s, transform .3s ease .05s;}
   .ddpanel.open .dd-group,.ddpanel.open .dd-item{opacity:1; transform:none;}
   .dd-group{font-family:'JetBrains Mono',monospace; font-size:.62rem; letter-spacing:.1em; text-transform:uppercase;
-    color:var(--faint); padding:10px 12px 4px;}
-  .dd-item{display:block; padding:8px 12px; border-radius:8px; text-decoration:none; color:var(--ink); font-size:.9rem; border:0;}
-  .dd-item b{color:var(--accent); font-family:'JetBrains Mono',monospace; font-size:.8rem; margin-right:6px;}
-  a.dd-item:hover{background:var(--accent-soft);}
+    color:var(--faint); padding:12px 12px 5px;}
+  /* glossy rounded capsules */
+  .dd-item{display:flex; align-items:baseline; gap:8px; padding:9px 13px; margin:3px 2px; border-radius:14px; position:relative;
+    text-decoration:none; color:var(--ink); font-size:.9rem; border:1px solid transparent;
+    transition:transform .18s cubic-bezier(.34,1.4,.5,1), background .2s, border-color .2s, box-shadow .2s;}
+  .dd-item b{color:var(--accent); font-family:'JetBrains Mono',monospace; font-size:.8rem; flex:none;}
+  a.dd-item:hover{transform:translateX(5px);
+    background:linear-gradient(120deg, color-mix(in srgb,var(--accent) 16%,transparent), color-mix(in srgb,var(--accent) 5%,transparent));
+    border-color:color-mix(in srgb,var(--accent) 34%,transparent);
+    box-shadow:0 4px 14px rgba(20,18,25,.12), inset 0 1px 0 rgba(255,255,255,.55);}
+  a.dd-item:focus-visible{outline:none; transform:translateX(5px);
+    border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 45%,transparent);}
   .dd-item.soon{color:var(--faint);} .dd-item.soon b{color:var(--faint);}
   .dd-item.soon em{font-style:normal; font-size:.7rem;}
-  .dd-item.here{background:var(--accent-soft); font-weight:600;}
-  @media(max-width:560px){ .ddpanel{width:min(320px,86vw);} #sitenav .brand{font-size:1rem;} .navright .cur{display:none;} }
+  /* current lesson highlight */
+  .dd-item.here{font-weight:600; color:var(--ink-strong);
+    background:linear-gradient(120deg, color-mix(in srgb,var(--accent) 26%,transparent), color-mix(in srgb,var(--accent) 9%,transparent));
+    border-color:color-mix(in srgb,var(--accent) 44%,transparent);
+    box-shadow:0 3px 12px color-mix(in srgb,var(--accent) 22%,transparent), inset 0 1px 0 rgba(255,255,255,.5);}
+  .dd-item.here::before{content:""; position:absolute; left:-1px; top:22%; bottom:22%; width:3px; border-radius:0 3px 3px 0; background:var(--accent);}
+  /* mobile: full-width panel */
+  @media(max-width:560px){
+    .ddpanel{position:fixed; top:58px; left:10px; right:10px; width:auto; max-height:78vh;
+      transform-origin:top center; transform:translateY(-14px) scale(.96);}
+    .ddpanel.open{transform:translateY(0) scale(1);}
+    .dd-scroll{max-height:78vh;}
+    #sitenav .brand{font-size:1rem;} .navright .cur{display:none;}
+  }
+  /* reduced-motion accessibility */
+  @media(prefers-reduced-motion: reduce){
+    .ddpanel{transition:opacity .12s ease, visibility .12s; transform:none;}
+    .ddpanel.open{transform:none;}
+    .dd-bubbles{display:none;}
+    .ddpanel .dd-group,.ddpanel .dd-item{transition:none; transform:none;}
+    a.dd-item:hover,a.dd-item:focus-visible{transform:none;}
+  }
 
   /* ═══════════ lesson prev/next footer ═══════════ */
   #lessonnav{max-width:var(--measure); margin:56px auto 0; padding:0 0 20px; display:grid;
