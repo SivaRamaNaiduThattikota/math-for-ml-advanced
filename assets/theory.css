@@ -263,71 +263,86 @@
   .ddbtn{background:var(--accent-soft); color:var(--accent); border:1px solid transparent; border-radius:20px;
     padding:7px 14px; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:.74rem;}
   .ddbtn:hover{border-color:var(--accent);}
-  /* ── layered translucent-glass lessons dropdown ── */
-  .ddpanel{position:absolute; top:50px; right:0; width:344px; max-height:76vh; overflow:hidden;
-    background:color-mix(in srgb, var(--card) 68%, transparent);
-    -webkit-backdrop-filter:blur(30px) saturate(200%); backdrop-filter:blur(30px) saturate(200%);
-    border:1px solid rgba(255,255,255,.55); border-radius:22px;
-    box-shadow:0 30px 72px rgba(20,18,25,.34), 0 3px 10px rgba(20,18,25,.14),
-      inset 0 1px 0 rgba(255,255,255,.7), inset 0 0 46px rgba(255,255,255,.05);
-    opacity:0; visibility:hidden; transform-origin:top right; transform:translateY(-14px) scale(.9);
-    transition:opacity .24s ease, transform .34s cubic-bezier(.34,1.5,.5,1), visibility .24s;}
+  /* ── premium iOS Liquid-Glass lessons dropdown ── */
+  .ddchev{display:inline-block; margin-left:4px; font-size:.72em; transition:transform .38s cubic-bezier(.34,1.55,.5,1);}
+  .ddbtn[aria-expanded="true"] .ddchev{transform:rotate(180deg);}
+  .ddbtn:active{transform:scale(.95);}
+  .ddpanel{position:absolute; top:52px; right:0; width:min(348px, calc(100vw - 24px));
+    max-height:min(76vh, calc(100vh - 76px)); overflow:hidden;
+    background:color-mix(in srgb, var(--card) 60%, transparent);
+    -webkit-backdrop-filter:blur(34px) saturate(200%); backdrop-filter:blur(34px) saturate(200%);
+    border:1px solid rgba(255,255,255,.6); border-radius:26px;
+    box-shadow:0 34px 84px rgba(20,18,25,.36), 0 4px 14px rgba(20,18,25,.16),
+      inset 0 1px 0 rgba(255,255,255,.78), inset 0 0 64px rgba(255,255,255,.05);
+    opacity:0; visibility:hidden; transform-origin:top right; transform:translateY(-16px) scale(.86);
+    transition:opacity .28s ease, transform .42s cubic-bezier(.32,1.62,.5,1), visibility .28s;}
   @supports not (backdrop-filter: blur(1px)){ .ddpanel{background:var(--card);} }
-  .ddpanel::before{content:""; position:absolute; inset:0; z-index:2; pointer-events:none; border-radius:inherit;
-    background:linear-gradient(150deg, rgba(255,255,255,.24), rgba(255,255,255,0) 44%);}
+  /* soft reflective top sheen */
+  .ddpanel::before{content:""; position:absolute; inset:0; z-index:3; pointer-events:none; border-radius:inherit;
+    background:linear-gradient(155deg, rgba(255,255,255,.30), rgba(255,255,255,0) 46%);}
   .ddpanel.open{opacity:1; visibility:visible; transform:translateY(0) scale(1);}
-  /* floating bubbles behind the items */
-  .dd-bubbles{position:absolute; inset:0; z-index:0; overflow:hidden; pointer-events:none; border-radius:inherit;}
-  .dd-bubbles span{position:absolute; bottom:-32px; border-radius:50%; opacity:.5;
-    background:radial-gradient(circle at 32% 30%, color-mix(in srgb,var(--accent) 55%,transparent), color-mix(in srgb,var(--accent) 10%,transparent) 70%);
-    animation:ddrise linear infinite;}
-  .dd-bubbles span:nth-child(1){left:8%;  width:46px; height:46px; animation-duration:13s; animation-delay:0s;}
-  .dd-bubbles span:nth-child(2){left:30%; width:26px; height:26px; animation-duration:10s; animation-delay:-3s;}
-  .dd-bubbles span:nth-child(3){left:52%; width:60px; height:60px; animation-duration:16s; animation-delay:-6s;}
-  .dd-bubbles span:nth-child(4){left:70%; width:20px; height:20px; animation-duration:9s;  animation-delay:-1s;}
-  .dd-bubbles span:nth-child(5){left:84%; width:38px; height:38px; animation-duration:14s; animation-delay:-8s;}
-  .dd-bubbles span:nth-child(6){left:20%; width:16px; height:16px; animation-duration:8s;  animation-delay:-4s;}
-  @keyframes ddrise{0%{transform:translateY(0) scale(.9); opacity:0;} 14%{opacity:.5;} 86%{opacity:.5;} 100%{transform:translateY(-120%) scale(1.15); opacity:0;}}
-  .dd-scroll{position:relative; z-index:1; max-height:76vh; overflow-y:auto; padding:8px; scrollbar-width:thin;}
-  /* items settle in as the panel floats open */
-  .ddpanel .dd-group,.ddpanel .dd-item{opacity:0; transform:translateY(6px); transition:opacity .3s ease .05s, transform .3s ease .05s;}
+  /* ambient four-colour field + three floating glass bubbles */
+  .dd-bubbles{position:absolute; inset:0; z-index:0; overflow:hidden; pointer-events:none; border-radius:inherit;
+    background:
+      radial-gradient(60% 50% at 14% 8%,  rgba(124,92,255,.20), transparent 60%),
+      radial-gradient(55% 50% at 90% 18%, rgba(52,211,238,.16), transparent 60%),
+      radial-gradient(60% 55% at 82% 94%, rgba(244,114,182,.16), transparent 60%),
+      radial-gradient(55% 52% at 8% 92%,  rgba(90,170,255,.16), transparent 60%);}
+  .dd-bubbles span{position:absolute; border-radius:50%; filter:blur(26px); opacity:.4; animation:ddfloat ease-in-out infinite alternate;}
+  .dd-bubbles span:nth-child(1){width:170px; height:170px; left:-42px; top:-32px;
+    background:radial-gradient(circle at 40% 38%, #a78bfa, transparent 70%); animation-duration:11s;}
+  .dd-bubbles span:nth-child(2){width:190px; height:190px; right:-52px; top:32%;
+    background:radial-gradient(circle at 40% 38%, #34d3ee, transparent 70%); animation-duration:15s; animation-delay:-4s;}
+  .dd-bubbles span:nth-child(3){width:160px; height:160px; left:22%; bottom:-48px;
+    background:radial-gradient(circle at 40% 38%, #f472b6, transparent 70%); animation-duration:13s; animation-delay:-7s;}
+  @keyframes ddfloat{from{transform:translate(0,0) scale(1);} to{transform:translate(16px,-18px) scale(1.16);}}
+  [data-theme="dark"] .dd-bubbles span{opacity:.32;}
+  [data-theme="glass"] .dd-bubbles span{opacity:.6;}   /* Liquid: strongest ambient colour */
+  /* content materialises from blur as the panel springs open */
+  .dd-scroll{position:relative; z-index:1; max-height:min(76vh, calc(100vh - 80px)); overflow-y:auto; overflow-x:hidden;
+    padding:9px; scrollbar-width:thin; filter:blur(7px); transition:filter .42s cubic-bezier(.32,1.55,.5,1);}
+  .ddpanel.open .dd-scroll{filter:blur(0);}
+  .ddpanel .dd-group,.ddpanel .dd-item{opacity:0; transform:translateY(7px); transition:opacity .32s ease .06s, transform .32s ease .06s;}
   .ddpanel.open .dd-group,.ddpanel.open .dd-item{opacity:1; transform:none;}
   .dd-group{font-family:'JetBrains Mono',monospace; font-size:.62rem; letter-spacing:.1em; text-transform:uppercase;
-    color:var(--faint); padding:12px 12px 5px;}
-  /* glossy rounded capsules */
-  .dd-item{display:flex; align-items:baseline; gap:8px; padding:9px 13px; margin:3px 2px; border-radius:14px; position:relative;
-    text-decoration:none; color:var(--ink); font-size:.9rem; border:1px solid transparent;
-    transition:transform .18s cubic-bezier(.34,1.4,.5,1), background .2s, border-color .2s, box-shadow .2s;}
+    color:var(--faint); padding:13px 13px 5px;}
+  /* glossy rounded lesson capsules (large touch targets) */
+  .dd-item{display:flex; align-items:center; gap:9px; padding:11px 14px; margin:4px 4px; border-radius:16px; position:relative;
+    min-height:44px; line-height:1.35; text-decoration:none; color:var(--ink); font-size:.9rem; border:1px solid transparent;
+    transition:transform .2s cubic-bezier(.34,1.5,.5,1), background .22s, border-color .22s, box-shadow .22s;}
   .dd-item b{color:var(--accent); font-family:'JetBrains Mono',monospace; font-size:.8rem; flex:none;}
-  a.dd-item:hover{transform:translateX(5px);
-    background:linear-gradient(120deg, color-mix(in srgb,var(--accent) 16%,transparent), color-mix(in srgb,var(--accent) 5%,transparent));
-    border-color:color-mix(in srgb,var(--accent) 34%,transparent);
-    box-shadow:0 4px 14px rgba(20,18,25,.12), inset 0 1px 0 rgba(255,255,255,.55);}
-  a.dd-item:focus-visible{outline:none; transform:translateX(5px);
-    border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 45%,transparent);}
+  a.dd-item:hover{transform:translateX(5px) translateY(-1px);
+    background:linear-gradient(120deg, color-mix(in srgb,var(--accent) 18%,transparent), color-mix(in srgb,var(--accent) 5%,transparent));
+    border-color:color-mix(in srgb,var(--accent) 36%,transparent);
+    box-shadow:0 7px 20px rgba(20,18,25,.16), inset 0 1px 0 rgba(255,255,255,.6);}
+  a.dd-item:active{transform:translateX(5px) scale(.975);}
+  a.dd-item:focus-visible{outline:none; transform:translateX(5px) translateY(-1px);
+    border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 50%,transparent);}
   .dd-item.soon{color:var(--faint);} .dd-item.soon b{color:var(--faint);}
   .dd-item.soon em{font-style:normal; font-size:.7rem;}
-  /* current lesson highlight */
-  .dd-item.here{font-weight:600; color:var(--ink-strong);
-    background:linear-gradient(120deg, color-mix(in srgb,var(--accent) 26%,transparent), color-mix(in srgb,var(--accent) 9%,transparent));
-    border-color:color-mix(in srgb,var(--accent) 44%,transparent);
-    box-shadow:0 3px 12px color-mix(in srgb,var(--accent) 22%,transparent), inset 0 1px 0 rgba(255,255,255,.5);}
-  .dd-item.here::before{content:""; position:absolute; left:-1px; top:22%; bottom:22%; width:3px; border-radius:0 3px 3px 0; background:var(--accent);}
-  /* mobile: full-width panel */
+  /* current lesson — clearly highlighted */
+  .dd-item.here,a.dd-item[aria-current="page"]{font-weight:600; color:var(--ink-strong);
+    background:linear-gradient(120deg, color-mix(in srgb,var(--accent) 30%,transparent), color-mix(in srgb,var(--accent) 10%,transparent));
+    border-color:color-mix(in srgb,var(--accent) 50%,transparent);
+    box-shadow:0 5px 18px color-mix(in srgb,var(--accent) 28%,transparent), inset 0 1px 0 rgba(255,255,255,.55);}
+  .dd-item.here::after{content:""; position:absolute; left:0; top:24%; bottom:24%; width:3px; border-radius:0 3px 3px 0; background:var(--accent);}
+  /* desktop: below trigger, right-aligned (default). mobile: near-full-width with safe margins */
   @media(max-width:560px){
-    .ddpanel{position:fixed; top:58px; left:10px; right:10px; width:auto; max-height:78vh;
-      transform-origin:top center; transform:translateY(-14px) scale(.96);}
+    .ddpanel{position:fixed; top:58px; left:12px; right:12px; width:auto;
+      transform-origin:top center; transform:translateY(-16px) scale(.95);}
     .ddpanel.open{transform:translateY(0) scale(1);}
-    .dd-scroll{max-height:78vh;}
+    .dd-item{padding:13px 15px; min-height:48px; font-size:.92rem;}
     #sitenav .brand{font-size:1rem;} .navright .cur{display:none;}
   }
   /* reduced-motion accessibility */
   @media(prefers-reduced-motion: reduce){
     .ddpanel{transition:opacity .12s ease, visibility .12s; transform:none;}
     .ddpanel.open{transform:none;}
-    .dd-bubbles{display:none;}
+    .dd-bubbles span{animation:none;}
+    .dd-scroll{filter:none; transition:none;}
+    .ddchev{transition:none;}
     .ddpanel .dd-group,.ddpanel .dd-item{transition:none; transform:none;}
-    a.dd-item:hover,a.dd-item:focus-visible{transform:none;}
+    a.dd-item:hover,a.dd-item:focus-visible,a.dd-item:active{transform:none;}
   }
 
   /* ═══════════ lesson prev/next footer ═══════════ */
@@ -433,6 +448,11 @@
     border:1px solid rgba(255,255,255,.75);
     box-shadow:0 10px 34px rgba(38,26,76,.12), inset 0 1px 0 rgba(255,255,255,.85);
   }
+  /* Liquid theme: strongest translucency + ambient colour on the lessons dropdown */
+  [data-theme="glass"] .ddpanel{background:color-mix(in srgb, var(--card) 82%, transparent);
+    -webkit-backdrop-filter:blur(42px) saturate(210%); backdrop-filter:blur(42px) saturate(210%);
+    border-color:rgba(255,255,255,.88);
+    box-shadow:0 36px 88px rgba(38,26,76,.32), inset 0 1px 0 rgba(255,255,255,.92), inset 0 0 72px rgba(255,255,255,.07);}
   [data-theme="glass"] table.sum{border-radius:14px; overflow:hidden;}
   [data-theme="glass"] table.sum td{background:transparent;}
   /* keep diagrams/figures readable: more opaque frost */

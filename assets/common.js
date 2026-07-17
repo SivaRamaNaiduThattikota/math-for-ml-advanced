@@ -23,7 +23,7 @@
       const here = i === cur ? " here" : "";
       const cls = (s.ready ? "dd-item" : "dd-item soon") + here;
       const href = s.ready ? BASE + s.slug + "/theory.html" : null;
-      const open = href ? `<a class="${cls}" href="${href}" role="menuitem">` : `<span class="${cls}">`;
+      const open = href ? `<a class="${cls}" href="${href}" role="menuitem"${i === cur ? ' aria-current="page"' : ''}>` : `<span class="${cls}">`;
       const close = href ? "</a>" : "</span>";
       items += `${open}<b>${s.num}</b> ${s.title}${s.ready ? "" : ' <em>· soon</em>'}${close}`;
     });
@@ -33,8 +33,8 @@
         ${curLabel}
         <button class="ddbtn" id="searchBtn" aria-label="Search lessons" title="Search lessons (press / or ⌘K)">🔍 Search</button>
         <div class="dd">
-          <button class="ddbtn" id="ddBtn" aria-haspopup="true" aria-expanded="false">Sessions ▾</button>
-          <div class="ddpanel" id="ddPanel" role="menu"><div class="dd-bubbles" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="dd-scroll">${items}</div></div>
+          <button class="ddbtn" id="ddBtn" aria-haspopup="true" aria-expanded="false">Sessions <span class="ddchev" aria-hidden="true">▾</span></button>
+          <div class="ddpanel" id="ddPanel" role="menu"><div class="dd-bubbles" aria-hidden="true"><span></span><span></span><span></span></div><div class="dd-scroll">${items}</div></div>
         </div>
         <button id="themeToggle" class="navtoggle" aria-label="Toggle theme">🌙</button>
       </div>`;
